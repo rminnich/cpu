@@ -194,22 +194,22 @@ func runRemote(cmd, port9p string) error {
 	// Connect to the socket, return the nonce.
 	a := net.JoinHostPort("127.0.0.1", port9p)
 	v("remote:Dial %v", a)
-	so, err := net.Dial("tcp4", a)
+	sock, err := net.Dial("tcp4", a)
 	if err != nil {
 		log.Fatalf("Dial 9p port: %v", err)
 	}
 	v("remote:Connected: write nonce %s\n", nonce)
-	if _, err := fmt.Fprintf(so, "%s", nonce); err != nil {
+	if _, err := fmt.Fprintf(sock, "%s", nonce); err != nil {
 		log.Fatalf("Write nonce: %v", err)
 	}
 	v("remote:Wrote the nonce")
 
 	// the kernel takes over the socket after the Mount.
-	defer so.Close()
+	defer sock.Close()
 	flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
-	cf, err := so.(*net.TCPConn).File()
+	cf, err := sock.(*net.TCPConn).File()
 	if err != nil {
-		log.Fatalf("Cannot get fd for %v: %v", so, err)
+		log.Fatalf("Cannot get fd for %v: %v", sock, err)
 	}
 	fd := cf.Fd()
 	v("remote:fd is %v", fd)
@@ -255,7 +255,21 @@ func runRemote(cmd, port9p string) error {
 	v("remote:runRemote: command is %q", cmd)
 	f := strings.Fields(cmd)
 	c := exec.Command(f[0], f[1:]...)
-	c.Stdin, c.Stdout, c.Stderr, c.Dir = os.Stdin, os.Stdout, os.Stderr, os.Getenv("PWD")
+	v("open stdin")
+	si, err := os.Open("/tmp/cpu/dev/stdin")
+	if err != nil {
+		log.Printf("open /tmp/cpu/dev/stdin: %v %v", si, err)
+	}
+	so, err := os.OpenFile("/tmp/cpu/dev/stdout", os.O_RDWR, 0)
+	if err != nil {
+		log.Printf("open /tmp/cpu/dev/stdout: %v %v", si, err)
+	}
+	se, err := os.OpenFile("/tmp/cpu/dev/stderr", os.O_RDWR, 0)
+	if err != nil {
+		log.Printf("open /tmp/cpu/dev/stderr: %v %v", si, err)
+	}
+	v("DONE open stdin")
+	c.Stdin, c.Stdout, c.Stderr, c.Dir = si, so, se, os.Getenv("PWD")
 	return c.Run()
 }
 
@@ -400,6 +414,7 @@ func init() {
 		v = log.Printf
 	}
 	if *remote {
+		v = log.Printf
 		// The unshare system call in Linux doesn't unshare mount points
 		// mounted with --shared. Systemd mounts / with --shared. For a
 		// long discussion of the pros and cons of this see debian bug 739593.
