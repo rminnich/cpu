@@ -34,7 +34,7 @@ var (
 	// For the ssh server part
 	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
 	pubKeyFile  = flag.String("pk", "key.pub", "file for public key")
-	port        = flag.String("sp", "2222", "ssh default port")
+	port        = flag.String("sp", "23", "cpud default port")
 
 	debug     = flag.Bool("d", false, "enable debug prints")
 	runAsInit = flag.Bool("init", false, "run as init (Debug only; normal test is if we are pid 1")
@@ -223,7 +223,12 @@ func setWinsize(f *os.File, w, h int) {
 func handler(s ssh.Session) {
 	a := s.Command()
 	verbose("the handler is here, cmd is %v", a)
+	if len(a) == 0 {
+		// We almost certainly do not have their shell; use /bin/sh
+		a = []string{"/bin/sh", "sh",}
+	}
 	cmd := exec.Command(a[0], a[1:]...)
+	log.Printf("cmd %v cmd.Evn %v s %v", cmd, cmd.Env, s)
 	cmd.Env = append(cmd.Env, s.Environ()...)
 	ptyReq, winCh, isPty := s.Pty()
 	verbose("the command is %v", *cmd)
@@ -314,10 +319,14 @@ func doInit() error {
 		return ssh.KeysEqual(key, allowed)
 	}
 
+	// start the process reaper
+	procs := make(chan uint)
+	go cpuDone(procs)
+
 	// Now we run as an ssh server, and each time we get a connection,
 	// we run that command after setting things up for it.
 	forwardHandler := &ssh.ForwardedTCPHandler{}
-	server := ssh.Server{
+	cpud := ssh.Server{
 		LocalPortForwardingCallback: ssh.LocalPortForwardingCallback(func(ctx ssh.Context, dhost string, dport uint32) bool {
 			log.Println("Accepted forward", dhost, dport)
 			return true
@@ -335,23 +344,36 @@ func doInit() error {
 		Handler: handler,
 	}
 
-	// start the process reaper
-	procs := make(chan uint)
-	go cpuDone(procs)
+	cpud.SetOption(ssh.HostKeyFile(*hostKeyFile))
+	log.Println("starting cpu server on port " + *port)
+	go func() {
+		if err := cpud.ListenAndServe(); err != nil {
+			log.Print(err)
+		}
+		verbose("server.ListenAndServer returned")
+	}()
 
-	server.SetOption(ssh.HostKeyFile(*hostKeyFile))
-	log.Println("starting ssh server on port " + *port)
-	if err := server.ListenAndServe(); err != nil {
-		log.Print(err)
+	sshd := ssh.Server{
+		Addr:             ":" + "22",
+		PublicKeyHandler: publicKeyOption,
+		Handler:          handler,
 	}
-	verbose("server.ListenAndServer returned")
+
+	sshd.SetOption(ssh.HostKeyFile(*hostKeyFile))
+	log.Println("starting cpu server on port " + *port)
+	go func() {
+		if err := sshd.ListenAndServe(); err != nil {
+			log.Print(err)
+		}
+		verbose("server.ListenAndServer returned")
+	}()
 
 	numprocs := <-procs
 	verbose("Reaped %d procs", numprocs)
 	return nil
 }
 
-// TODO: we've been tryinmg to figure out the right way to do usage for years.
+// TODO: we've been trying to figure out the right way to do usage for years.
 // If this is a good way, it belongs in the uroot package.
 func usage() {
 	var b bytes.Buffer
