@@ -229,6 +229,10 @@ func runRemote(cmd, port9p string) error {
 		log.Printf("Warning: binding / over /tmp/cpu did not work: %v, continuing anyway", err)
 	}
 
+	ns := os.Getenv("CPUNAMESPACE")
+	if ns != "" {
+		*bindover = ns
+	}
 	if *bindover != "" {
 		// We could not get an overlayfs mount.
 		// There are lots of cases where binaries REQUIRE that ld.so be in the right place.
