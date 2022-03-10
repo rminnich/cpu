@@ -87,7 +87,7 @@ fn connect(host: &str, params: &HostParams) {
         None => host,
     };
     let port = match params.port {
-        None => 22,
+        None => 23,
         Some(p) => p,
     };
     let host = match host.contains(':') {
