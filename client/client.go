@@ -185,6 +185,10 @@ func (c *Cmd) Dial() error {
 	if len(c.Root) == 0 {
 		return nil
 	}
+	// If the namespace is empty, a nameserver won't be started
+	if _, ok := os.LookupEnv("CPU_NAMESPACE"); !ok {
+		return fmt.Errorf("Root is set to %q but there is no CPU_NAMESPACE", c.Root)
+	}
 
 	// Arrange port forwarding from remote ssh to our server.
 	// Note: cl.Listen returns a TCP listener with network "tcp"
@@ -363,19 +367,18 @@ func (c *Cmd) SetupInteractive() error {
 	if err != nil {
 		return err
 	}
-	// FIXME: getting a restorer from t.Raw doesn't work.
-	// Still not sure what I'm doing wrong.
-	// Always restores raw settings as traced in ioctl.
-	r, err := t.Get()
+	r, err := t.Raw()
 	if err != nil {
 		return err
 	}
-	if _, err = t.Raw(); err != nil {
-		return err
-	}
+	log.Printf("GOT A TERM t %v r %v", t, r)
 	c.closers = append(c.closers, func() error {
-		if err := t.Set(r); err != nil {
-			return err
+		log.Printf("LET's NOT RESET!!!! t %v r %v", t, r)
+		if false {
+			if err := t.Set(r); err != nil {
+				log.Printf("SET FAILED FUCK!!! %v", err)
+				return err
+			}
 		}
 		return nil
 	})
