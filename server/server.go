@@ -34,8 +34,11 @@ type Bind struct {
 
 // Server is an instance of a cpu server
 type Server struct {
-	Addr  string // Addr is an address, see net.Dial
-	binds []Bind
+	Addr   string // Addr is an address, see net.Dial
+	Stdin  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
+	binds  []Bind
 	// Any function can use fail to mark that something
 	// went badly wrong in some step. At that point, if wtf is set,
 	// cpud will start it. This is incredibly handy for debugging.
@@ -164,6 +167,8 @@ func (s *Server) Remote(cmd, port9p string) error {
 	v("CPUD: Terminal ready")
 	if s.fail && len(*wtf) != 0 {
 		c := exec.Command(*wtf)
+		// Tricky question: should wtf use the os files are the ones
+		// in the Server ... hmm.
 		c.Stdin, c.Stdout, c.Stderr, c.Dir = os.Stdin, os.Stdout, os.Stderr, "/"
 		log.Printf("CPUD: WTF: try to run %v", c)
 		if err := c.Run(); err != nil {
@@ -181,7 +186,7 @@ func (s *Server) Remote(cmd, port9p string) error {
 	v("CPUD:runRemote: command is %q", cmd)
 	f := strings.Fields(cmd)
 	c := exec.Command(f[0], f[1:]...)
-	c.Stdin, c.Stdout, c.Stderr, c.Dir = os.Stdin, os.Stdout, os.Stderr, os.Getenv("PWD")
+	c.Stdin, c.Stdout, c.Stderr, c.Dir = s.Stdin, s.Stdout, s.Stderr, os.Getenv("PWD")
 	err := c.Run()
 	v("CPUD:Run %v returns %v", c, err)
 	if err != nil {
@@ -269,6 +274,11 @@ func handler(s ssh.Session) {
 		}
 	}
 	verbose("handler exits")
+}
+
+// New returns a New server with defaults set.
+func New() (*Server, error) {
+	return &Server{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, nil
 }
 
 // func doInit() error {

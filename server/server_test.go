@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"reflect"
 	"testing"
 )
@@ -64,5 +65,44 @@ func TestParseBind(t *testing.T) {
 			continue
 		}
 
+	}
+}
+
+func TestNewServer(t *testing.T) {
+	s, err := New()
+	if err != nil {
+		t.Fatalf("New(): %v != nil", err)
+	}
+	t.Logf("New server: %v", s)
+}
+
+// Not sure testing this is a great idea but ... it works so ...
+func TestDropPrivs(t *testing.T) {
+	s, err := New()
+	if err != nil {
+		t.Fatalf("New(): %v != nil", err)
+	}
+	if err := s.DropPrivs(); err != nil {
+		t.Fatalf("s.DropPrivs(): %v != nil", err)
+	}
+}
+
+func TestRemoteNoNameSpace(t *testing.T) {
+	v = t.Logf
+	s, err := New()
+	if err != nil {
+		t.Fatalf("New(): %v != nil", err)
+	}
+	o, e := &bytes.Buffer{}, &bytes.Buffer{}
+	s.Stdin, s.Stdout, s.Stderr = nil, o, e
+	if err := s.Remote("echo hi", ":0"); err != nil {
+		t.Fatalf(`s.Remote("date", 0): %v != nil`, err)
+	}
+	t.Logf("%q %q", o, e)
+	if o.String() != "hi\n" {
+		t.Errorf("command output: %q != %q", o.String(), "hi\n")
+	}
+	if e.String() != "" {
+		t.Errorf("command error: %q != %q", e.String(), "")
 	}
 }
