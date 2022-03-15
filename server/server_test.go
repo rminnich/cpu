@@ -95,8 +95,8 @@ func TestRemoteNoNameSpace(t *testing.T) {
 	}
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
 	s.Stdin, s.Stdout, s.Stderr = nil, o, e
-	if err := s.Remote("echo hi", ":0"); err != nil {
-		t.Fatalf(`s.Remote("date", 0): %v != nil`, err)
+	if err := s.Remote(":0", "echo", "hi"); err != nil {
+		t.Fatalf(`s.Remote("echo hi", 0): %v != nil`, err)
 	}
 	t.Logf("%q %q", o, e)
 	if o.String() != "hi\n" {

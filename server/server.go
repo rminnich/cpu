@@ -141,9 +141,11 @@ func (s *Server) TmpMounts() error {
 // with a private namespace (CLONE_NEWS on Linux; RFNAMEG on Plan9).
 // On Linux, it starts as uid 0, and once the mount/bind is done,
 // calls DropPrivs.
-func (s *Server) Remote(cmd, port9p string) error {
+func (s *Server) Remote(port9p string, args ...string) error {
 	var errors error
-
+	// privatize is considered best-effort.
+	// Hence it returns no errors.
+	privatize()
 	// N.B. if the namespace variable is set,
 	// even if it is empty, server will try to do
 	// the 9p mount.
@@ -183,9 +185,8 @@ func (s *Server) Remote(cmd, port9p string) error {
 	}
 
 	// The unmount happens for free since we unshared.
-	v("CPUD:runRemote: command is %q", cmd)
-	f := strings.Fields(cmd)
-	c := exec.Command(f[0], f[1:]...)
+	v("CPUD:runRemote: command is %q", args)
+	c := exec.Command(args[0], args[1:]...)
 	c.Stdin, c.Stdout, c.Stderr, c.Dir = s.Stdin, s.Stdout, s.Stderr, os.Getenv("PWD")
 	err := c.Run()
 	v("CPUD:Run %v returns %v", c, err)

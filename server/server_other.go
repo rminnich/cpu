@@ -56,3 +56,6 @@ func command(n string, args ...string) *exec.Cmd {
 	cmd := exec.Command(n, args...)
 	return cmd
 }
+
+func privatize() {
+}

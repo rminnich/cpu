@@ -113,56 +113,43 @@ func logopts() {
 	}
 }
 
-// We do flag parsing in init so we can
-// Unshare if needed while we are still
-// single threaded.
-func init() {
-	flag.Parse()
-	if *runAsInit && *remote {
-		log.Fatal("Only use -remote or -init, not both")
-	}
-	if os.Getpid() == 1 {
-		pid1, *runAsInit, *debug = true, true, false
-	}
-	if *debug {
-		v = log.Printf
-		logopts()
-	}
-	if *remote {
-		// The unshare system call in Linux doesn't unshare mount points
-		// mounted with --shared. Systemd mounts / with --shared. For a
-		// long discussion of the pros and cons of this see debian bug 739593.
-		// The Go model of unsharing is more like Plan 9, where you ask
-		// to unshare and the namespaces are unconditionally unshared.
-		// To make this model work we must further mark / as MS_PRIVATE.
-		// This is what the standard unshare command does.
-		var (
-			none  = [...]byte{'n', 'o', 'n', 'e', 0}
-			slash = [...]byte{'/', 0}
-			flags = uintptr(unix.MS_PRIVATE | unix.MS_REC) // Thanks for nothing Linux.
-		)
-		// We assume that this was called via an unshare command or forked by
-		// a process with the CLONE_NEWS flag set. This call to Unshare used to work;
-		// no longer. We leave this code here as a signpost. Don't enable it.
-		// It won't work. Go's green threads and Linux name space code have
-		// never gotten along. Fixing it is hard, I've discussed this with the Go
-		// core from time to time and it's not a priority for them.
-		if false {
-			if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
-				log.Printf("CPUD:bad Unshare: %v", err)
-			}
+func privatize() {
+	// We used to try to use the unshare system call. It never
+	// worked. We leave code here as a marker and warning to
+	// people who might get the idea into their heads. Don't.
+	// The unshare system call in Linux doesn't unshare mount points
+	// mounted with --shared. Systemd mounts / with --shared. For a
+	// long discussion of the pros and cons of this see debian bug 739593.
+	// The Go model of unsharing is more like Plan 9, where you ask
+	// to unshare and the namespaces are unconditionally unshared.
+	// To make this model work we must further mark / as MS_PRIVATE.
+	// This is what the standard unshare command does.
+	var (
+		none  = [...]byte{'n', 'o', 'n', 'e', 0}
+		slash = [...]byte{'/', 0}
+		flags = uintptr(unix.MS_PRIVATE | unix.MS_REC) // Thanks for nothing Linux.
+	)
+	// We assume that this was called via an unshare command or forked by
+	// a process with the CLONE_NEWS flag set. This call to Unshare used to work;
+	// no longer. We leave this code here as a signpost. Don't enable it.
+	// It won't work. Go's green threads and Linux name space code have
+	// never gotten along. Fixing it is hard, I've discussed this with the Go
+	// core from time to time and it's not a priority for them.
+	if false {
+		if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
+			log.Printf("CPUD:bad Unshare: %v", err)
 		}
-		// Make / private. This call *is* safe so far for reasons.
-		// Probably because, on many systems, we are lucky enough not to have a systemd
-		// there screwing up namespaces.
-		_, _, err1 := syscall.RawSyscall6(unix.SYS_MOUNT, uintptr(unsafe.Pointer(&none[0])), uintptr(unsafe.Pointer(&slash[0])), 0, flags, 0, 0)
-		if err1 != 0 {
-			log.Printf("CPUD:Warning: unshare failed (%v). There will be no private 9p mount if systemd is there", err1)
-		}
-		flags = 0
-		if err := unix.Mount("cpu", "/tmp", "tmpfs", flags, ""); err != nil {
-			log.Printf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
-		}
+	}
+	// Make / private. This call *is* safe so far for reasons.
+	// Probably because, on many systems, we are lucky enough not to have a systemd
+	// there screwing up namespaces.
+	_, _, err1 := syscall.RawSyscall6(unix.SYS_MOUNT, uintptr(unsafe.Pointer(&none[0])), uintptr(unsafe.Pointer(&slash[0])), 0, flags, 0, 0)
+	if err1 != 0 {
+		log.Printf("CPUD:Warning: unshare failed (%v). There will be no private 9p mount if systemd is there", err1)
+	}
+	flags = 0
+	if err := unix.Mount("cpu", "/tmp", "tmpfs", flags, ""); err != nil {
+		log.Printf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
 	}
 }
 
