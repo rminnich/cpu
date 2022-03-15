@@ -1,9 +1,14 @@
+// Copyright 2018-2022 the u-root Authors. All rights reserved
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
+
 package server
 
 import (
 	"bytes"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestParseBind(t *testing.T) {
@@ -69,19 +74,13 @@ func TestParseBind(t *testing.T) {
 }
 
 func TestNewServer(t *testing.T) {
-	s, err := New()
-	if err != nil {
-		t.Fatalf("New(): %v != nil", err)
-	}
+	s := New()
 	t.Logf("New server: %v", s)
 }
 
 // Not sure testing this is a great idea but ... it works so ...
 func TestDropPrivs(t *testing.T) {
-	s, err := New()
-	if err != nil {
-		t.Fatalf("New(): %v != nil", err)
-	}
+	s := New()
 	if err := s.DropPrivs(); err != nil {
 		t.Fatalf("s.DropPrivs(): %v != nil", err)
 	}
@@ -89,10 +88,7 @@ func TestDropPrivs(t *testing.T) {
 
 func TestRemoteNoNameSpace(t *testing.T) {
 	v = t.Logf
-	s, err := New()
-	if err != nil {
-		t.Fatalf("New(): %v != nil", err)
-	}
+	s := New()
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
 	s.Stdin, s.Stdout, s.Stderr = nil, o, e
 	if err := s.Remote(":0", "echo", "hi"); err != nil {
@@ -105,4 +101,25 @@ func TestRemoteNoNameSpace(t *testing.T) {
 	if e.String() != "" {
 		t.Errorf("command error: %q != %q", e.String(), "")
 	}
+}
+
+func TestDaemonStart(t *testing.T) {
+	v = t.Logf
+	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
+
+	ln, err := s.Listen()
+	if err != nil {
+		t.Fatalf("s.Listen(): %v != nil", err)
+	}
+	t.Logf("Listening on %v", ln.Addr())
+	// this is a racy test.
+	go func() {
+		time.Sleep(5 * time.Second)
+		s.Close()
+	}()
+	if err := s.Serve(ln); err != nil {
+		t.Fatalf("s.Daemon(): %v != nil", err)
+	}
+	t.Logf("Daemon returns")
+
 }

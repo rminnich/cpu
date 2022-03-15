@@ -24,6 +24,34 @@ var (
 	klog = flag.Bool("klog", false, "Log cpud messages in kernel log, not stdout")
 )
 
+// cpud can run in one of three modes
+// o init
+// o daemon started by init
+// o manager of one cpu session.
+// It is *critical* that the session manager have a private
+// name space, else every cpu session will interfere with every
+// other session's mounts. What's the best way to ensure the manager
+// gets a private name space?
+// It turns out there is no harm in always privatizing the name space,
+// no matter the mode. The only special case is for init, as init
+// has to set up global mounts. It is easy to test for init: see
+// if we are PID 1.
+// So in this init function, we do not parse flags (that breaks tests;
+// flag.Parse() in init is a no-no), we will do PID1 tasks and then, no
+// matter what, privatize the namespace.
+func init() {
+	if os.Getpid() == 1 {
+	}
+	privatize()
+	if os.Getpid() != 1 {
+
+		if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
+			log.Fatalf(`unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); %v != nil`, err)
+		}
+	}
+
+}
+
 // NameSpace assembles a NameSpace for this cpud, iff CPU_NAMESPACE
 // is set.
 // CPU_NAMESPACE can be the empty string.
@@ -99,11 +127,17 @@ func (s *Server) Namespace(bindover string) (error, error) {
 }
 
 func osMounts() error {
+	var errors error
+	if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
+		errors = fmt.Errorf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
+
+	}
+
 	// Further, bind / onto /tmp/local so a non-hacked-on version may be visible.
 	if err := unix.Mount("/", "/tmp/local", "", syscall.MS_BIND, ""); err != nil {
-		log.Printf("CPUD:Warning: binding / over /tmp/cpu did not work: %v, continuing anyway", err)
+		errors = multierror.Append(fmt.Errorf("CPUD:Warning: binding / over /tmp/cpu did not work: %v, continuing anyway", err))
 	}
-	return nil
+	return errors
 }
 
 func logopts() {
@@ -114,9 +148,6 @@ func logopts() {
 }
 
 func privatize() {
-	// We used to try to use the unshare system call. It never
-	// worked. We leave code here as a marker and warning to
-	// people who might get the idea into their heads. Don't.
 	// The unshare system call in Linux doesn't unshare mount points
 	// mounted with --shared. Systemd mounts / with --shared. For a
 	// long discussion of the pros and cons of this see debian bug 739593.
@@ -135,10 +166,8 @@ func privatize() {
 	// It won't work. Go's green threads and Linux name space code have
 	// never gotten along. Fixing it is hard, I've discussed this with the Go
 	// core from time to time and it's not a priority for them.
-	if false {
-		if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
-			log.Printf("CPUD:bad Unshare: %v", err)
-		}
+	if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
+		log.Printf("CPUD:bad Unshare: %v", err)
 	}
 	// Make / private. This call *is* safe so far for reasons.
 	// Probably because, on many systems, we are lucky enough not to have a systemd
@@ -146,10 +175,6 @@ func privatize() {
 	_, _, err1 := syscall.RawSyscall6(unix.SYS_MOUNT, uintptr(unsafe.Pointer(&none[0])), uintptr(unsafe.Pointer(&slash[0])), 0, flags, 0, 0)
 	if err1 != 0 {
 		log.Printf("CPUD:Warning: unshare failed (%v). There will be no private 9p mount if systemd is there", err1)
-	}
-	flags = 0
-	if err := unix.Mount("cpu", "/tmp", "tmpfs", flags, ""); err != nil {
-		log.Printf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
 	}
 }
 

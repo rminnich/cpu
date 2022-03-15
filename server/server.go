@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const (
+	defaultPort = "23"
+)
+
 // Bind defines a bind mount. It records the Local directory,
 // e.g. /bin, and the remote directory, e.g. /tmp/cpu/bin.
 type Bind struct {
@@ -34,15 +39,20 @@ type Bind struct {
 
 // Server is an instance of a cpu server
 type Server struct {
-	Addr   string // Addr is an address, see net.Dial
-	Stdin  io.Reader
-	Stdout io.Writer
-	Stderr io.Writer
-	binds  []Bind
+	addr       string // Addr is an address, see net.Dial
+	port       string
+	Stdin      io.Reader
+	Stdout     io.Writer
+	Stderr     io.Writer
+	binds      []Bind
+	publicKey  []byte
+	hostKeyPEM []byte
 	// Any function can use fail to mark that something
 	// went badly wrong in some step. At that point, if wtf is set,
 	// cpud will start it. This is incredibly handy for debugging.
 	fail bool
+	wtf  string
+	ssh  ssh.Server
 }
 
 // a nonce is a [32]byte containing only printable characters, suitable for use as a string
@@ -278,8 +288,32 @@ func handler(s ssh.Session) {
 }
 
 // New returns a New server with defaults set.
-func New() (*Server, error) {
-	return &Server{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}, nil
+func New() *Server {
+	return &Server{port: "23", Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+}
+
+// WithPort sets the server port, i.e. an ssh server port.
+func (s *Server) WithPort(port string) *Server {
+	s.port = port
+	return s
+}
+
+// WithPublicKey sets the server public key (e.g. ~/.ssh/id_rsa.pub)
+func (s *Server) WithPublicKey(key []byte) *Server {
+	s.publicKey = key
+	return s
+}
+
+// WithHostKeyPEM sets the server HostKeyPEM
+func (s *Server) WithHostKeyPEM(key []byte) *Server {
+	s.hostKeyPEM = key
+	return s
+}
+
+// WithAddr sets the server listen address.
+func (s *Server) WithAddr(addr string) *Server {
+	s.addr = addr
+	return s
 }
 
 // func doInit() error {
@@ -407,3 +441,64 @@ func New() (*Server, error) {
 // 		log.Fatal("CPUD:can only run as remote or pid 1")
 // 	}
 // }
+
+// Listen returns a net.Listener for a server.
+func (s *Server) Listen() (net.Listener, error) {
+	return net.Listen("tcp", net.JoinHostPort(s.addr, s.port))
+}
+
+// SSHConfig configures a Server to serve SSH sessions.
+// ready to serve. starts a synchronous daemon, i.e. blocks until
+// it is done.
+// Assumptions:
+// This is not init. It is started by init. It will not reap zombies.
+// It will not create devices and common mounts (e.g. /proc)
+func (s *Server) SSHConfig() *Server {
+	v("configure SSH server")
+	publicKeyOption := func(ctx ssh.Context, key ssh.PublicKey) bool {
+		allowed, _, _, _, _ := ssh.ParseAuthorizedKey(s.publicKey)
+		return ssh.KeysEqual(key, allowed)
+	}
+
+	// Now we run as an ssh server, and each time we get a connection,
+	// we run that command after setting things up for it.
+	forwardHandler := &ssh.ForwardedTCPHandler{}
+	server := ssh.Server{
+		LocalPortForwardingCallback: ssh.LocalPortForwardingCallback(func(ctx ssh.Context, dhost string, dport uint32) bool {
+			log.Println("CPUD:Accepted forward", dhost, dport)
+			return true
+		}),
+		Addr:             s.addr + ":" + s.port,
+		PublicKeyHandler: publicKeyOption,
+		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, host string, port uint32) bool {
+			log.Println("CPUD:attempt to bind", host, port, "granted")
+			return true
+		}),
+		RequestHandlers: map[string]ssh.RequestHandler{
+			"tcpip-forward":        forwardHandler.HandleSSHRequest,
+			"cancel-tcpip-forward": forwardHandler.HandleSSHRequest,
+		},
+		Handler: handler,
+	}
+
+	server.SetOption(ssh.HostKeyPEM(s.hostKeyPEM))
+
+	s.ssh = server
+	return s
+}
+
+// Serve serves cpu sessions.
+func (s *Server) Serve(ln net.Listener) error {
+	log.Println("CPUD:starting ssh server on port " + s.port)
+	if err := s.ssh.Serve(ln); err != nil {
+		log.Printf("CPUD:err %v", err)
+	}
+	verbose("server.ListenAndServer returned")
+	return nil
+}
+
+// Close closes a CPU session.
+func (s *Server) Close() error {
+	v("CPUD: closing SSH session")
+	return s.ssh.Close()
+}
