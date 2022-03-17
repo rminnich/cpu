@@ -442,7 +442,7 @@ func (s *Server) WithAddr(addr string) *Server {
 // 	}
 // }
 
-// Listen returns a net.Listener for a server.
+// Listen returns a net.Listener for a Server.
 func (s *Server) Listen() (net.Listener, error) {
 	return net.Listen("tcp", net.JoinHostPort(s.addr, s.port))
 }

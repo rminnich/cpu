@@ -6,9 +6,12 @@ package server
 
 import (
 	"bytes"
+	"net"
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/u-root/cpu/client"
 )
 
 func TestParseBind(t *testing.T) {
@@ -122,4 +125,61 @@ func TestDaemonStart(t *testing.T) {
 	}
 	t.Logf("Daemon returns")
 
+}
+
+// TestDaemonConnect tests connecting to a daemon and exercising
+// minimal operations.
+func TestDaemonConnect(t *testing.T) {
+	v = t.Logf
+	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
+
+	ln, err := s.Listen()
+	if err != nil {
+		t.Fatalf("s.Listen(): %v != nil", err)
+	}
+	t.Logf("Listening on %v", ln.Addr())
+	host, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// this is a racy test.
+	// The ssh package really ought to allow you to accept
+	// on a socket and then call with that socket. This would be
+	// more in line with bsd sockets which let you write a server
+	// and client in line, e.g.
+	// socket/bind/listen/connect/accept
+	// oh well.
+	go func() {
+		if err := s.Serve(ln); err != nil {
+			t.Fatalf("s.Daemon(): %v != nil", err)
+		}
+	}()
+	v = t.Logf
+	// From this test forward, at least try to get a port.
+	// For this test, there must be a key.
+
+	c := client.Command(h, "ls", "-l").WithPort(port).WithRoot("/").WithNameSpace("")
+	if err := c.Dial(); err != nil {
+		t.Fatalf("Dial: got %v, want nil", err)
+	}
+	if err = c.Start(); err != nil {
+		t.Fatalf("Start: got %v, want nil", err)
+	}
+	if err = c.SetupInteractive(); err != nil {
+		t.Fatalf("SetupInteractive: got %v, want nil", err)
+	}
+	if err := c.Stdin.Close(); err != nil {
+		t.Errorf("Close stdin: Got %v, want nil", err)
+	}
+	if err := c.Wait(); err != nil {
+		t.Fatalf("Wait: got %v, want nil", err)
+	}
+	r, err := c.Outputs()
+	if err != nil {
+		t.Errorf("Outputs: got %v, want nil", err)
+	}
+	t.Logf("c.Run: (%v, %q, %q)", err, r[0].String(), r[1].String())
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: got %v, want nil", err)
+	}
 }
