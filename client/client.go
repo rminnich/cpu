@@ -367,18 +367,19 @@ func (c *Cmd) SetupInteractive() error {
 	if err != nil {
 		return err
 	}
-	r, err := t.Raw()
+	// FIXME: getting a restorer from t.Raw doesn't work.
+	// Still not sure what I'm doing wrong.
+	// Always restores raw settings as traced in ioctl.
+	r, err := t.Get()
 	if err != nil {
 		return err
 	}
-	log.Printf("GOT A TERM t %v r %v", t, r)
+	if _, err = t.Raw(); err != nil {
+		return err
+	}
 	c.closers = append(c.closers, func() error {
-		log.Printf("LET's NOT RESET!!!! t %v r %v", t, r)
-		if false {
-			if err := t.Set(r); err != nil {
-				log.Printf("SET FAILED FUCK!!! %v", err)
-				return err
-			}
+		if err := t.Set(r); err != nil {
+			return err
 		}
 		return nil
 	})

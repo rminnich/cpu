@@ -36,4 +36,15 @@ uJ2GbxWXZEXGMHS79KrHXMnAFPZLYotgH1v+eTJ631lfZVFCOms=
 
 	publicKey = []byte(`ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDidpNTi7GaqCkv6/rMjMA0ikN5Oa9o77q3bkeGWd+GWAM7Z1mfhuHbwfI/JBkLxvXGsScY8vz5Zx3aEnDJjygzAHAmY9qE9xfvCWWXqrnOqErS2DQKcIXwag2t0GXQ6dd24dAPpbFgZLskiBIUorCimAvxEI+DZljyvCUj5XBjufpCMqXydKHpiNqWQD0tRI2R/v2sBciGJeJZglnNX7JQJgJWFva0pYQOG1zN+Wy3Vj01EMEGfJUs8MaGLSiI7R4X+2W0I6Q4DHeISxFH4dngTYTvVyrqJSD/cogRCKguTVOCmYZF68ibkwYK1ImK8St+SVznr12DcwK+AXMxHaij rminnich@xcpu`)
 	hostKey   = []byte{}
+	// Why %s and not %d?
+	// https://github.com/kevinburke/ssh_config/issues/2
+	// ssh_config does not do any of the % stuff yet.
+	// So we have to rewrite this with the full path. Ouch.
+	sshConfig = []byte(`
+Host server
+	HostName localhost
+	Port 2222
+	User root
+	IdentityFile %s/server
+`)
 )
