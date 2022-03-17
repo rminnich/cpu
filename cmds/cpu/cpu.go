@@ -51,7 +51,7 @@ var (
 	namespace   = flag.String("namespace", "/lib:/lib64:/usr:/bin:/etc:/home", "Default namespace for the remote process -- set to none for none")
 	msize       = flag.Int("msize", 1048576, "msize to use")
 	network     = flag.String("network", "tcp", "network to use")
-	port        = flag.String("sp", cpu.DefaultPort, "cpu default port")
+	port        = flag.String("sp", client.DefaultPort, "cpu default port")
 	port9p      = flag.String("port9p", "", "port9p # on remote machine for 9p mount")
 	root        = flag.String("root", "/", "9p root")
 	timeout9P   = flag.String("timeout9p", "100ms", "time to wait for the 9p mount to happen.")
@@ -398,7 +398,7 @@ func getPort(host, port string) string {
 		}
 	}
 	if len(p) == 0 || p == "22" {
-		p = cpu.DefaultPort
+		p = client.DefaultPort
 		v("getPort: return default %q", p)
 	}
 	v("returns %q", p)
@@ -415,8 +415,8 @@ func usage() {
 }
 
 func newCPU(host string, args ...string) error {
-	cpu.V = v
-	c := cpu.Command(host, args...).WithPrivateKeyFile(*keyFile).WithPort(*port).WithRoot(*root).WithNameSpace(*namespace)
+	client.V = v
+	c := client.Command(host, args...).WithPrivateKeyFile(*keyFile).WithPort(*port).WithRoot(*root).WithNameSpace(*namespace)
 	if err := c.Dial(); err != nil {
 		return fmt.Errorf("Dial: got %v, want nil", err)
 	}
