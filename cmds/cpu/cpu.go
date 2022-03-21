@@ -428,9 +428,9 @@ func newCPU(host string, args ...string) error {
 	if err := c.Wait(); err != nil {
 		log.Printf("Wait: got %v, want nil", err)
 	}
-	log.Printf("CPU:close")
+	v("CPU:close")
 	err := c.Close()
-	log.Printf("CPU:close done")
+	v("CPU:close done")
 	return err
 }
 
