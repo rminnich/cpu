@@ -487,7 +487,10 @@ func (s *Server) SSHConfig() *Server {
 	return s
 }
 
-// Serve serves cpu sessions.
+// Serve serves cpu sessions. It is the daemon mode: it does not do all that
+// init mode does, in particular it is not a process reaper, but it does
+// accept connections and start an instance of itself for each individual
+// connection. Per-connection startup is done in the handler.
 func (s *Server) Serve(ln net.Listener) error {
 	log.Println("CPUD:starting ssh server on port " + s.port)
 	if err := s.ssh.Serve(ln); err != nil {
@@ -497,7 +500,8 @@ func (s *Server) Serve(ln net.Listener) error {
 	return nil
 }
 
-// Close closes a CPU session.
+// Close closes a CPU session. It does not terminate any active
+// session, but it will stop any new connections.
 func (s *Server) Close() error {
 	v("CPUD: closing SSH session")
 	return s.ssh.Close()

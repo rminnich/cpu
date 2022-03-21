@@ -31,20 +31,30 @@ var (
 // It is *critical* that the session manager have a private
 // name space, else every cpu session will interfere with every
 // other session's mounts. What's the best way to ensure the manager
-// gets a private name space?
+// gets a private name space, and ensure that no improper use
+// of this package will result in NOT having a private name space?
+// How do we make the logic failsafe?
+//
 // It turns out there is no harm in always privatizing the name space,
-// no matter the mode. The only special case is for init, as init
-// has to set up global mounts. It is easy to test for init: see
-// if we are PID 1.
+// no matter the mode.
 // So in this init function, we do not parse flags (that breaks tests;
-// flag.Parse() in init is a no-no), we will do PID1 tasks and then, no
-// matter what, privatize the namespace.
+// flag.Parse() in init is a no-no), and then, no
+// matter what, privatize the namespace, and mount a private /tmp/cpu if we
+// are not pid1. As for pid1 tasks, they should be specified by the cpud
+// itself, not this package. This code merely ensures correction operation
+// of cpud no matter what mode it is invoked in.
 func init() {
+	// placeholder. It's not clear we ever want to do this. We used to create
+	// a root file system here, but that should be up to the server. The files
+	// might magically exist, b/c of initrd; or be automagically mounted via
+	// some other mechanism.
 	if os.Getpid() == 1 {
 	}
+	// Always privatize; all this means is that new mounts are only seen by self
+	// and children. The goal is to do the minimal set of things we must do,
+	// in case of an error by the user of this package.
 	privatize()
 	if os.Getpid() != 1 {
-
 		if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
 			log.Fatalf(`unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); %v != nil`, err)
 		}
