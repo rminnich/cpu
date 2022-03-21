@@ -40,7 +40,7 @@ func TestPrivateNameSpace(t *testing.T) {
 
 }
 
-// Now the fun begins. We have to be a demon.n
+// Now the fun begins. We have to be a demon.
 func TestDaemon(t *testing.T) {
 	v = t.Logf
 

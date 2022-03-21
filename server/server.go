@@ -5,14 +5,12 @@
 package server
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -50,39 +48,26 @@ type Server struct {
 	// Any function can use fail to mark that something
 	// went badly wrong in some step. At that point, if wtf is set,
 	// cpud will start it. This is incredibly handy for debugging.
-	fail bool
-	wtf  string
-	ssh  ssh.Server
+	fail  bool
+	wtf   string
+	ssh   ssh.Server
+	msize int
+	mopts string
 }
 
 // a nonce is a [32]byte containing only printable characters, suitable for use as a string
 type nonce [32]byte
 
 var (
-	// For the ssh server part
-	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
-	pubKeyFile  = flag.String("pk", "key.pub", "file for public key")
-	port        = flag.String("sp", "23", "cpu default port")
-
-	debug     = flag.Bool("d", false, "enable debug prints")
-	runAsInit = flag.Bool("init", false, "run as init (Debug only; normal test is if we are pid 1")
-	v         = func(string, ...interface{}) {}
-	remote    = flag.Bool("remote", false, "indicates we are the remote side of the cpu session")
-	network   = flag.String("network", "tcp", "network to use")
-	keyFile   = flag.String("key", filepath.Join(os.Getenv("HOME"), ".ssh/cpu_rsa"), "key file")
-	bin       = flag.String("bin", "cpu", "path of cpu binary")
-	port9p    = flag.String("port9p", "", "port9p # on remote machine for 9p mount")
-	dbg9p     = flag.String("dbg9p", "0", "show 9p io")
-	root      = flag.String("root", "/", "9p root")
-	mountopts = flag.String("mountopts", "", "Extra options to add to the 9p mount")
-	msize     = flag.Int("msize", 1048576, "msize to use")
+	pid1 bool
+	v    = log.Printf // func(string, ...interface{}) {}
 	// To get debugging when Things Go Wrong, you can run as, e.g., -wtf /bbin/elvish
 	// or change the value here to /bbin/elvish.
 	// This way, when Things Go Wrong, you'll be dropped into a shell and look around.
 	// This is sometimes your only way to debug if there is (e.g.) a Go runtime
 	// bug around unsharing. Which has happened.
-	wtf  = flag.String("wtf", "", "Command to run if setup (e.g. private name space mounts) fail")
-	pid1 bool
+	// This is compile time only because I'm so uncertain of whether it's dangerous
+	wtf string
 )
 
 func verbose(f string, a ...interface{}) {
@@ -177,14 +162,14 @@ func (s *Server) Remote(port9p string, args ...string) error {
 		errors = multierror.Append(err)
 	}
 	v("CPUD: Terminal ready")
-	if s.fail && len(*wtf) != 0 {
-		c := exec.Command(*wtf)
+	if s.fail && len(wtf) != 0 {
+		c := exec.Command(wtf)
 		// Tricky question: should wtf use the os files are the ones
 		// in the Server ... hmm.
 		c.Stdin, c.Stdout, c.Stderr, c.Dir = os.Stdin, os.Stdout, os.Stderr, "/"
 		log.Printf("CPUD: WTF: try to run %v", c)
 		if err := c.Run(); err != nil {
-			log.Printf("CPUD: Running %q failed: %v", *wtf, err)
+			log.Printf("CPUD: Running %q failed: %v", wtf, err)
 		}
 		log.Printf("CPUD: WTF done")
 		return errors
@@ -201,12 +186,12 @@ func (s *Server) Remote(port9p string, args ...string) error {
 	err := c.Run()
 	v("CPUD:Run %v returns %v", c, err)
 	if err != nil {
-		if s.fail && len(*wtf) != 0 {
-			c := exec.Command(*wtf)
+		if s.fail && len(wtf) != 0 {
+			c := exec.Command(wtf)
 			c.Stdin, c.Stdout, c.Stderr, c.Dir = os.Stdin, os.Stdout, os.Stderr, "/"
 			log.Printf("CPUD: WTF: try to run %v", c)
 			if err := c.Run(); err != nil {
-				log.Printf("CPUD: Running %q failed: %v", *wtf, err)
+				log.Printf("CPUD: Running %q failed: %v", wtf, err)
 			}
 			log.Printf("CPUD: WTF done: %v", err)
 		}
@@ -289,7 +274,7 @@ func handler(s ssh.Session) {
 
 // New returns a New server with defaults set.
 func New() *Server {
-	return &Server{port: "23", Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+	return &Server{port: "23", msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 }
 
 // WithPort sets the server port, i.e. an ssh server port.

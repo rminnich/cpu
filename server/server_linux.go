@@ -5,7 +5,6 @@
 package server
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"net"
@@ -16,12 +15,7 @@ import (
 	"unsafe"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/u-root/u-root/pkg/ulog"
 	"golang.org/x/sys/unix"
-)
-
-var (
-	klog = flag.Bool("klog", false, "Log cpud messages in kernel log, not stdout")
 )
 
 // cpud can run in one of three modes
@@ -75,7 +69,7 @@ func (s *Server) Namespace(bindover string) (error, error) {
 	v("CPUD:namespace is %q", bindover)
 
 	// Connect to the socket, return the nonce.
-	a := net.JoinHostPort("127.0.0.1", *port9p)
+	a := net.JoinHostPort("127.0.0.1", s.port)
 	v("CPUD:Dial %v", a)
 	so, err := net.Dial("tcp4", a)
 	if err != nil {
@@ -109,9 +103,9 @@ func (s *Server) Namespace(bindover string) (error, error) {
 	// The debug= option is here so you can see how to temporarily set it if needed.
 	// It generates copious output so use it sparingly.
 	// A useful compromise value is 5.
-	opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, *msize)
-	if *mountopts != "" {
-		opts += "," + *mountopts
+	opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, s.msize)
+	if len(s.mopts) > 0 {
+		opts += "," + s.mopts
 	}
 	v("CPUD: mount 127.0.0.1 on /tmp/cpu 9p %#x %s", flags, opts)
 	if err := unix.Mount("127.0.0.1", "/tmp/cpu", "9p", flags, opts); err != nil {
@@ -150,12 +144,12 @@ func osMounts() error {
 	return errors
 }
 
-func logopts() {
-	if *klog {
-		ulog.KernelLog.Reinit()
-		v = ulog.KernelLog.Printf
-	}
-}
+// func logopts() {
+// 	if *klog {
+// 		ulog.KernelLog.Reinit()
+// 		v = ulog.KernelLog.Printf
+// 	}
+// }
 
 func privatize() {
 	// The unshare system call in Linux doesn't unshare mount points
