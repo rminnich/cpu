@@ -438,7 +438,7 @@ func handler(s ssh.Session) {
 	v("handler: cmd is %v", a)
 	cmd := exec.Command(a[0], a[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWNS}
-	cmd.Env = append(cmd.Env, s.Environ()...)
+	cmd.Env = append(append(cmd.Env, "CPUD_SESSION=1"), s.Environ()...)
 	ptyReq, winCh, isPty := s.Pty()
 	if isPty {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
@@ -629,6 +629,8 @@ func main() {
 		initFlags()
 		v = log.Printf
 		*debug = true
+		// This cpud is the first pid, pid 1, started by the kernel.
+		// cpuSet will do basic directory creation, mounts, and reap children.
 		if os.Getpid() == 1 {
 			log.Printf("CPUD: we are init")
 			if err := cpuSetup(); err != nil {
@@ -636,10 +638,19 @@ func main() {
 			}
 		}
 
-		if err := runDaemon(); err != nil {
-			log.Fatalf("Daemon returns %v", err)
+		// cpud may have been started from some init process (e.g. as a u-root uinit,
+		// or from the shell). If so, there will be no CPUD_SESSION environment variable.
+		if _, ok := os.LookupEnv("CPUD_SESSION"); !ok {
+			if err := runDaemon(); err != nil {
+				log.Fatalf("Daemon returns %v", err)
+			}
+			os.Exit(0)
 		}
-		v("Exiting new package daemon")
+		// The CPUD_SESSION environment variable was found. This is a session.
+
+		if err := s.Remote(flag.Args()...); err != nil {
+			log.Fatal(err)
+		}
 		os.Exit(0)
 	}
 

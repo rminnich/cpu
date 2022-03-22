@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -88,7 +89,7 @@ func TestNewServer(t *testing.T) {
 
 // Not sure testing this is a great idea but ... it works so ...
 func TestDropPrivs(t *testing.T) {
-	s := New()
+	s := NewSession()
 	if err := s.DropPrivs(); err != nil {
 		t.Fatalf("s.DropPrivs(): %v != nil", err)
 	}
@@ -96,10 +97,10 @@ func TestDropPrivs(t *testing.T) {
 
 func TestRemoteNoNameSpace(t *testing.T) {
 	v = t.Logf
-	s := New()
+	s := NewSession()
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
 	s.Stdin, s.Stdout, s.Stderr = nil, o, e
-	if err := s.Remote(":0", "echo", "hi"); err != nil {
+	if err := s.Remote("echo", "hi"); err != nil {
 		t.Fatalf(`s.Remote("echo hi", 0): %v != nil`, err)
 	}
 	t.Logf("%q %q", o, e)
@@ -133,7 +134,6 @@ func gendotssh(dir, config string) error {
 }
 
 func TestDaemonStart(t *testing.T) {
-
 	v = t.Logf
 	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
 
@@ -151,12 +151,15 @@ func TestDaemonStart(t *testing.T) {
 		t.Fatalf("s.Daemon(): %v != nil", err)
 	}
 	t.Logf("Daemon returns")
-
 }
 
 // TestDaemonConnect tests connecting to a daemon and exercising
 // minimal operations.
 func TestDaemonConnect(t *testing.T) {
+	_, err := exec.LookPath("cpud")
+	if err != nil {
+		t.Skipf("Sorry, no cpud, skipping this test")
+	}
 	d := t.TempDir()
 	if err := os.Setenv("HOME", d); err != nil {
 		t.Fatalf(`os.Setenv("HOME", %s): %v != nil`, d, err)
@@ -217,9 +220,9 @@ func TestDaemonConnect(t *testing.T) {
 		t.Fatalf("Start: got %v, want nil", err)
 	}
 	defer func() {
-	if err := c.Close(); err != nil {
-		t.Fatalf("Close: got %v, want nil", err)
-	}
+		if err := c.Close(); err != nil {
+			t.Fatalf("Close: got %v, want nil", err)
+		}
 	}()
 	if err := c.Stdin.Close(); err != nil {
 		t.Errorf("Close stdin: Got %v, want nil", err)

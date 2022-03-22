@@ -39,20 +39,25 @@ type Bind struct {
 type Server struct {
 	addr       string // Addr is an address, see net.Dial
 	port       string
-	Stdin      io.Reader
-	Stdout     io.Writer
-	Stderr     io.Writer
-	binds      []Bind
 	publicKey  []byte
 	hostKeyPEM []byte
+	ssh        ssh.Server
+}
+
+type Session struct {
+	restorer *termios.Termios
+	Stdin    io.Reader
+	Stdout   io.Writer
+	Stderr   io.Writer
+	binds    []Bind
 	// Any function can use fail to mark that something
 	// went badly wrong in some step. At that point, if wtf is set,
 	// cpud will start it. This is incredibly handy for debugging.
-	fail  bool
-	wtf   string
-	ssh   ssh.Server
-	msize int
-	mopts string
+	fail   bool
+	wtf    string
+	msize  int
+	mopts  string
+	port9p string
 }
 
 // a nonce is a [32]byte containing only printable characters, suitable for use as a string
@@ -75,7 +80,7 @@ func verbose(f string, a ...interface{}) {
 }
 
 // DropPrivs drops privileges to the level of os.Getuid / os.Getgid
-func (s *Server) DropPrivs() error {
+func (s *Session) DropPrivs() error {
 	uid := unix.Getuid()
 	v("CPUD:dropPrives: uid is %v", uid)
 	if uid == 0 {
@@ -91,7 +96,7 @@ func (s *Server) DropPrivs() error {
 }
 
 // Terminal sets up an interactive terminal.
-func (s *Server) Terminal() error {
+func (s *Session) Terminal() error {
 	// for some reason echo is not set.
 	t, err := termios.New()
 	if err != nil {
@@ -101,11 +106,11 @@ func (s *Server) Terminal() error {
 	if err != nil {
 		return fmt.Errorf("CPUD:can't get a termios; oh well; %v", err)
 	}
+	s.restorer = term
 	term.Lflag |= unix.ECHO | unix.ECHONL
 	if err := t.Set(term); err != nil {
 		return fmt.Errorf("CPUD:can't set a termios; oh well; %v", err)
 	}
-
 	return nil
 }
 
@@ -113,7 +118,7 @@ func (s *Server) Terminal() error {
 // N.B. the /tmp/cpu mount is private assuming this program
 // was started correctly with the namespace unshared (on Linux and
 // Plan 9; on *BSD or Windows no such guarantees can be made).
-func (s *Server) TmpMounts() error {
+func (s *Session) TmpMounts() error {
 	// It's true we are making this directory while still root.
 	// This ought to be safe as it is a private namespace mount.
 	// (or we are started with a clean namespace).
@@ -136,11 +141,8 @@ func (s *Server) TmpMounts() error {
 // with a private namespace (CLONE_NEWS on Linux; RFNAMEG on Plan9).
 // On Linux, it starts as uid 0, and once the mount/bind is done,
 // calls DropPrivs.
-func (s *Server) Remote(port9p string, args ...string) error {
+func (s *Session) Remote(args ...string) error {
 	var errors error
-	// privatize is considered best-effort.
-	// Hence it returns no errors.
-	privatize()
 	// N.B. if the namespace variable is set,
 	// even if it is empty, server will try to do
 	// the 9p mount.
@@ -274,7 +276,13 @@ func handler(s ssh.Session) {
 
 // New returns a New server with defaults set.
 func New() *Server {
-	return &Server{port: "23", msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+	return &Server{port: "23"}
+}
+
+// New returns a New session with defaults set.
+// TODO: should session be a separate package.
+func NewSession() *Session {
+	return &Session{msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
 }
 
 // WithPort sets the server port, i.e. an ssh server port.

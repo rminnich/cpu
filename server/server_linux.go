@@ -56,28 +56,31 @@ func init() {
 
 }
 
-// NameSpace assembles a NameSpace for this cpud, iff CPU_NAMESPACE
-// is set.
-// CPU_NAMESPACE can be the empty string.
-// It also requires that CPU_NONCE exist.
-func (s *Server) Namespace(bindover string) (error, error) {
-	var warning error
+// NameSpace assembles a NameSpace for this cpud, iff CPU_NONCE
+// is set and len(s.binds) > 0.
+func (s *Session) Namespace() (error, error) {
+	if len(s.binds) == 0 {
+		return nil, nil
+	}
 	// Get the nonce and remove it from the environment.
 	// N.B. We do not save the nonce in the cpu struct.
-	nonce := os.Getenv("CPUNONCE")
+	nonce, ok := os.LookupEnv("CPUNONCE")
+	if !ok {
+		return nil, nil
+	}
 	os.Unsetenv("CPUNONCE")
-	v("CPUD:namespace is %q", bindover)
+	v("CPUD:namespace is %q", s.binds)
 
 	// Connect to the socket, return the nonce.
-	a := net.JoinHostPort("127.0.0.1", s.port)
+	a := net.JoinHostPort("127.0.0.1", s.port9p)
 	v("CPUD:Dial %v", a)
 	so, err := net.Dial("tcp4", a)
 	if err != nil {
-		return warning, fmt.Errorf("CPUD:Dial 9p port: %v", err)
+		return nil, fmt.Errorf("CPUD:Dial 9p port: %v", err)
 	}
 	v("CPUD:Connected: write nonce %s\n", nonce)
 	if _, err := fmt.Fprintf(so, "%s", nonce); err != nil {
-		return warning, fmt.Errorf("CPUD:Write nonce: %v", err)
+		return nil, fmt.Errorf("CPUD:Write nonce: %v", err)
 	}
 	v("CPUD:Wrote the nonce")
 	// Zero it. I realize I am not a crypto person.
@@ -89,7 +92,7 @@ func (s *Server) Namespace(bindover string) (error, error) {
 	flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
 	cf, err := so.(*net.TCPConn).File()
 	if err != nil {
-		return warning, fmt.Errorf("CPUD:Cannot get fd for %v: %v", so, err)
+		return nil, fmt.Errorf("CPUD:Cannot get fd for %v: %v", so, err)
 	}
 
 	fd := cf.Fd()
@@ -109,13 +112,14 @@ func (s *Server) Namespace(bindover string) (error, error) {
 	}
 	v("CPUD: mount 127.0.0.1 on /tmp/cpu 9p %#x %s", flags, opts)
 	if err := unix.Mount("127.0.0.1", "/tmp/cpu", "9p", flags, opts); err != nil {
-		return warning, fmt.Errorf("9p mount %v", err)
+		return nil, fmt.Errorf("9p mount %v", err)
 	}
 	v("CPUD: mount done")
 
 	// In some cases if you set LD_LIBRARY_PATH it is ignored.
 	// This is disappointing to say the least. We just bind a few things into /
 	// bind *may* hide local resources but for now it's the least worst option.
+	var warning error
 	for _, n := range s.binds {
 		t := filepath.Join("/tmp/cpu", n.Remote)
 		v("CPUD: mount %v over %v", t, n.Local)
