@@ -14,7 +14,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -40,7 +39,7 @@ type nonce [32]byte
 var (
 	defaultKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh/cpu_rsa")
 	// For the ssh server part
-	bin         = flag.String("bin", "cpud", "path of cpu binary")
+	runCmd      = flag.String("cmd", "cpud -remote -bin cpud", "command to issue to remote cpud.")
 	debug       = flag.Bool("d", false, "enable debug prints")
 	dbg9p       = flag.Bool("dbg9p", false, "show 9p io")
 	dump        = flag.Bool("dump", false, "Dump copious output, including a 9p trace, to a temp file at exit")
@@ -143,7 +142,7 @@ func runClient(host, a, port, key string) error {
 	}
 
 	var env []string
-	cmd := fmt.Sprintf("%v -remote -bin %v", *bin, *bin)
+	cmd := *runCmd
 
 	_, wantNameSpace := os.LookupEnv("CPU_NAMESPACE")
 	wantNameSpace = wantNameSpace || *namespace != "none"
@@ -278,11 +277,6 @@ func shell(client *ossh.Client, cmd string, envs ...string) error {
 		return err
 	}
 	defer t.Set(r)
-	if *bin == "" {
-		if *bin, err = exec.LookPath("cpu"); err != nil {
-			return err
-		}
-	}
 
 	v("command is %q", cmd)
 	session, err := client.NewSession()
