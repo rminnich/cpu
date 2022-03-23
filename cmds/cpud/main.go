@@ -25,7 +25,6 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/hashicorp/go-multierror"
 	"github.com/kr/pty" // TODO: get rid of krpty
-	"github.com/u-root/cpu/server"
 	"github.com/u-root/u-root/pkg/termios"
 	"github.com/u-root/u-root/pkg/ulog"
 	"golang.org/x/sys/unix"
@@ -35,7 +34,6 @@ import (
 type nonce [32]byte
 
 var (
-	newPackageCPUD = flag.Bool("new", false, "Run with the new package-based cpud -- MUST BE FIRST FLAG")
 	// For the ssh server part
 	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
 	pubKeyFile  = flag.String("pk", "key.pub", "file for public key")
@@ -318,8 +316,6 @@ func runRemote(cmd, port9p string) error {
 	return err
 }
 
-var sawNew bool
-
 // We do flag parsing in init so we can
 // Unshare if needed while we are still
 // single threaded.
@@ -327,32 +323,8 @@ var sawNew bool
 // but we really need to b/c unshare etc. are broken in earlier versions of go.
 // I.e., an unshare in earlier Go only affects one process, not all processes constituting
 // the program.
-//
-// n.b. for new package code. While we make the move to the new code, we default to the
-// original code, UNLESS the FIRST argument -- os.Args[1] -- is "-new=true"
-// That and only that.
-// In that case, init() runs differently and, in particular, won't do flag parsing,
-// which is not safe to do in init(). No shorthand, nothing else. This is temporary
-// and at some point will be gone!
 func init() {
-	if len(os.Args) > 1 && os.Args[1] == "-new=true" {
-		// All those thread-safe things we need to do in init are done by the package.
-		// As far as we know :-)
-		// If we are init, the rest of the work is thread-safe as it occurs in the
-		// file system ir on a thread-safe way
-		// Note that we don't set the variable; that will get set in main when
-		// we call flag.Parse()
-		log.Printf("CPUD: running new package-based cpud")
-		sawNew = true
-		return
-	}
-
 	flag.Parse()
-	initFlags()
-	oldSetup()
-}
-
-func initFlags() {
 	if *runAsInit && *remote {
 		log.Fatal("Only use -remote or -init, not both")
 	}
@@ -366,50 +338,42 @@ func initFlags() {
 			v = ulog.KernelLog.Printf
 		}
 	}
-}
-
-// oldSetup does setup for the pre-package version of cpud.
-// This can be removed when we're sure the new one works.
-// The key operations here are done in the package init() now.
-func oldSetup() {
-	if !*remote {
-		return
-	}
-	// The unshare system call in Linux doesn't unshare mount points
-	// mounted with --shared. Systemd mounts / with --shared. For a
-	// long discussion of the pros and cons of this see debian bug 739593.
-	// The Go model of unsharing is more like Plan 9, where you ask
-	// to unshare and the namespaces are unconditionally unshared.
-	// To make this model work we must further mark / as MS_PRIVATE.
-	// This is what the standard unshare command does.
-	var (
-		none  = [...]byte{'n', 'o', 'n', 'e', 0}
-		slash = [...]byte{'/', 0}
-		flags = uintptr(unix.MS_PRIVATE | unix.MS_REC) // Thanks for nothing Linux.
-	)
-	// We assume that this was called via an unshare command or forked by
-	// a process with the CLONE_NEWS flag set. This call to Unshare used to work;
-	// no longer. We leave this code here as a signpost. Don't enable it.
-	// It won't work. Go's green threads and Linux name space code have
-	// never gotten along. Fixing it is hard, I've discussed this with the Go
-	// core from time to time and it's not a priority for them.
-	if false {
-		if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
-			log.Printf("CPUD:bad Unshare: %v", err)
+	if *remote {
+		// The unshare system call in Linux doesn't unshare mount points
+		// mounted with --shared. Systemd mounts / with --shared. For a
+		// long discussion of the pros and cons of this see debian bug 739593.
+		// The Go model of unsharing is more like Plan 9, where you ask
+		// to unshare and the namespaces are unconditionally unshared.
+		// To make this model work we must further mark / as MS_PRIVATE.
+		// This is what the standard unshare command does.
+		var (
+			none  = [...]byte{'n', 'o', 'n', 'e', 0}
+			slash = [...]byte{'/', 0}
+			flags = uintptr(unix.MS_PRIVATE | unix.MS_REC) // Thanks for nothing Linux.
+		)
+		// We assume that this was called via an unshare command or forked by
+		// a process with the CLONE_NEWS flag set. This call to Unshare used to work;
+		// no longer. We leave this code here as a signpost. Don't enable it.
+		// It won't work. Go's green threads and Linux name space code have
+		// never gotten along. Fixing it is hard, I've discussed this with the Go
+		// core from time to time and it's not a priority for them.
+		if false {
+			if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
+				log.Printf("CPUD:bad Unshare: %v", err)
+			}
+		}
+		// Make / private. This call *is* safe so far for reasons.
+		// Probably because, on many systems, we are lucky enough not to have a systemd
+		// there screwing up namespaces.
+		_, _, err1 := syscall.RawSyscall6(unix.SYS_MOUNT, uintptr(unsafe.Pointer(&none[0])), uintptr(unsafe.Pointer(&slash[0])), 0, flags, 0, 0)
+		if err1 != 0 {
+			log.Printf("CPUD:Warning: unshare failed (%v). There will be no private 9p mount if systemd is there", err1)
+		}
+		flags = 0
+		if err := unix.Mount("cpu", "/tmp", "tmpfs", flags, ""); err != nil {
+			log.Printf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
 		}
 	}
-	// Make / private. This call *is* safe so far for reasons.
-	// Probably because, on many systems, we are lucky enough not to have a systemd
-	// there screwing up namespaces.
-	_, _, err1 := syscall.RawSyscall6(unix.SYS_MOUNT, uintptr(unsafe.Pointer(&none[0])), uintptr(unsafe.Pointer(&slash[0])), 0, flags, 0, 0)
-	if err1 != 0 {
-		log.Printf("CPUD:Warning: unshare failed (%v). There will be no private 9p mount if systemd is there", err1)
-	}
-	flags = 0
-	if err := unix.Mount("cpu", "/tmp", "tmpfs", flags, ""); err != nil {
-		log.Printf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
-	}
-
 }
 
 func setWinsize(f *os.File, w, h int) {
@@ -438,7 +402,7 @@ func handler(s ssh.Session) {
 	v("handler: cmd is %v", a)
 	cmd := exec.Command(a[0], a[1:]...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWNS}
-	cmd.Env = append(append(cmd.Env, "CPUD_SESSION=1"), s.Environ()...)
+	cmd.Env = append(cmd.Env, s.Environ()...)
 	ptyReq, winCh, isPty := s.Pty()
 	if isPty {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("TERM=%s", ptyReq.Term))
@@ -482,7 +446,7 @@ func handler(s ssh.Session) {
 	} else {
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = s, s, s
 		v("running command %q without pty", cmd.String())
-		v("CPUD(%q,\n %q,\n %q,\n %q\n): :%v.Run:", cmd.Path, cmd.Args, cmd.Env, cmd.Dir, cmd)
+			v("CPUD(%q,\n %q,\n %q,\n %q\n): :%v.Run:", cmd.Path, cmd.Args, cmd.Env, cmd.Dir, cmd)
 		if err := cmd.Run(); errval(err) != nil {
 			v("CPUD(%q,\n %q,\n %q,\n %q\n): :%v.Run:err %v", cmd.Path, cmd.Args, cmd.Env, cmd.Dir, cmd, err)
 			s.Exit(1)
@@ -562,7 +526,7 @@ func doInit() error {
 		Addr:             ":" + *port,
 		PublicKeyHandler: publicKeyOption,
 		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, host string, port uint32) bool {
-			log.Println("CPUD:ReversePort:attempt to bind", host, port, "granted")
+			log.Println("CPUD:attempt to bind", host, port, "granted")
 			return true
 		}),
 		RequestHandlers: map[string]ssh.RequestHandler{
@@ -598,62 +562,8 @@ func usage() {
 	log.Fatalf("Usage: cpu [options] host [shell command]:\n%v", b.String())
 }
 
-func runDaemon() error {
-	v = log.Printf
-	pubKey, err := ioutil.ReadFile(*pubKeyFile)
-	if err != nil {
-		return err
-	}
-
-	hostKey, err := ioutil.ReadFile(*hostKeyFile)
-	if err != nil {
-		return err
-	}
-
-	s := server.New().WithPort(*port).WithPublicKey(pubKey).WithHostKeyPEM(hostKey).SSHConfig()
-
-	ln, err := s.Listen()
-	if err != nil {
-		return err
-	}
-	v("Listening on %v", ln.Addr())
-	if err := s.Serve(ln); err != nil {
-		return err
-	}
-	return nil
-}
-
 func main() {
-	if sawNew {
-		flag.Parse()
-		initFlags()
-		v = log.Printf
-		*debug = true
-		// This cpud is the first pid, pid 1, started by the kernel.
-		// cpuSet will do basic directory creation, mounts, and reap children.
-		if os.Getpid() == 1 {
-			log.Printf("CPUD: we are init")
-			if err := cpuSetup(); err != nil {
-				log.Printf("CPUD:CPU setup error with cpu running as init: %v", err)
-			}
-		}
-
-		// cpud may have been started from some init process (e.g. as a u-root uinit,
-		// or from the shell). If so, there will be no CPUD_SESSION environment variable.
-		if _, ok := os.LookupEnv("CPUD_SESSION"); !ok {
-			if err := runDaemon(); err != nil {
-				log.Fatalf("Daemon returns %v", err)
-			}
-			os.Exit(0)
-		}
-		// The CPUD_SESSION environment variable was found. This is a session.
-
-		if err := s.Remote(flag.Args()...); err != nil {
-			log.Fatal(err)
-		}
-		os.Exit(0)
-	}
-
+	v = log.Printf
 	verbose("Args %v pid %d *runasinit %v *remote %v", os.Args, os.Getpid(), *runAsInit, *remote)
 	args := flag.Args()
 	switch {
