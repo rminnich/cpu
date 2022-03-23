@@ -25,6 +25,7 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/hashicorp/go-multierror"
 	"github.com/kr/pty" // TODO: get rid of krpty
+	"github.com/u-root/cpu/server"
 	"github.com/u-root/u-root/pkg/termios"
 	"github.com/u-root/u-root/pkg/ulog"
 	"golang.org/x/sys/unix"
@@ -144,7 +145,6 @@ func fstab(t string) error {
 // mkdir /tmp/cpu on the remote machine
 // issue the mount command
 // test via an ls of /tmp/cpu
-// TODO: unshare first
 // We enter here as uid 0 and once the mount is done, back down.
 func runRemote(cmd, port9p string) error {
 	// Get the nonce and remove it from the environment.
@@ -427,6 +427,12 @@ func handler(s ssh.Session) {
 	}
 	v("handler: cmd is %v", a)
 	cmd := exec.Command(a[0], a[1:]...)
+	// N.B.: in the go runtime, after not long ago, CLONE_NEWNS in the CloneFlags
+	// also does two things: an unshare, and a remount of / to unshare mounts.
+	// see d8ed449d8eae5b39ffe227ef7f56785e978dd5e2 in the go tree for a discussion.
+	// This meant we could remove ALL calls of unshare and mount from cpud.
+	// Fun fact: I wrote that fix years ago, and then forgot to remove
+	// the support code from cpu. Oops.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWNS}
 	cmd.Env = append(cmd.Env, s.Environ()...)
 	ptyReq, winCh, isPty := s.Pty()
@@ -614,7 +620,15 @@ func main() {
 			log.Fatalf("CPUD(as init):%v", err)
 		}
 	case *remote:
-		verbose("Running as remote: args %q, port9p %v", args, *port9p)
+		if sawNew {
+			verbose("server package: Running as remote: args %q, port9p %v", args, *port9p)
+			s := server.NewSession(*port9p, args[0], args[1:]...)
+			if err := s.Run(); err != nil {
+				log.Fatalf("CPUD(as remote):%v", err)
+			}
+			break
+		}
+		verbose("Not server package: Running as remote: args %q, port9p %v", args, *port9p)
 		if err := runRemote(strings.Join(args, " "), *port9p); err != nil {
 			log.Fatalf("CPUD(as remote):%v", err)
 		}

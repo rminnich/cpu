@@ -58,6 +58,8 @@ type Session struct {
 	msize  int
 	mopts  string
 	port9p string
+	cmd    string
+	args   []string
 }
 
 // a nonce is a [32]byte containing only printable characters, suitable for use as a string
@@ -141,8 +143,11 @@ func (s *Session) TmpMounts() error {
 // with a private namespace (CLONE_NEWS on Linux; RFNAMEG on Plan9).
 // On Linux, it starts as uid 0, and once the mount/bind is done,
 // calls DropPrivs.
-func (s *Session) Remote(args ...string) error {
+func (s *Session) Run() error {
 	var errors error
+	if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
+		log.Fatalf(`unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); %v != nil`, err)
+	}
 	// N.B. if the namespace variable is set,
 	// even if it is empty, server will try to do
 	// the 9p mount.
@@ -182,8 +187,8 @@ func (s *Session) Remote(args ...string) error {
 	}
 
 	// The unmount happens for free since we unshared.
-	v("CPUD:runRemote: command is %q", args)
-	c := exec.Command(args[0], args[1:]...)
+	v("CPUD:runRemote: command is %q", s.args)
+	c := exec.Command(s.cmd, s.args...)
 	c.Stdin, c.Stdout, c.Stderr, c.Dir = s.Stdin, s.Stdout, s.Stderr, os.Getenv("PWD")
 	err := c.Run()
 	v("CPUD:Run %v returns %v", c, err)
@@ -281,8 +286,8 @@ func New() *Server {
 
 // New returns a New session with defaults set.
 // TODO: should session be a separate package.
-func NewSession() *Session {
-	return &Session{msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr}
+func NewSession(port9p, cmd string, args ...string) *Session {
+	return &Session{msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, port9p: port9p, cmd: cmd, args: args}
 }
 
 // WithPort sets the server port, i.e. an ssh server port.

@@ -89,7 +89,7 @@ func TestNewServer(t *testing.T) {
 
 // Not sure testing this is a great idea but ... it works so ...
 func TestDropPrivs(t *testing.T) {
-	s := NewSession()
+	s := NewSession("/bin/true")
 	if err := s.DropPrivs(); err != nil {
 		t.Fatalf("s.DropPrivs(): %v != nil", err)
 	}
@@ -97,11 +97,11 @@ func TestDropPrivs(t *testing.T) {
 
 func TestRemoteNoNameSpace(t *testing.T) {
 	v = t.Logf
-	s := NewSession()
+	s := NewSession("/bin/echo", "hi")
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
 	s.Stdin, s.Stdout, s.Stderr = nil, o, e
-	if err := s.Remote("echo", "hi"); err != nil {
-		t.Fatalf(`s.Remote("echo hi", 0): %v != nil`, err)
+	if err := s.Run(); err != nil {
+		t.Fatalf(`s.Run("echo hi", 0): %v != nil`, err)
 	}
 	t.Logf("%q %q", o, e)
 	if o.String() != "hi\n" {
@@ -156,10 +156,11 @@ func TestDaemonStart(t *testing.T) {
 // TestDaemonConnect tests connecting to a daemon and exercising
 // minimal operations.
 func TestDaemonConnect(t *testing.T) {
-	_, err := exec.LookPath("cpud")
+	cpud, err := exec.LookPath("cpud")
 	if err != nil {
 		t.Skipf("Sorry, no cpud, skipping this test")
 	}
+	t.Logf("cpud path is %q", cpud)
 	d := t.TempDir()
 	if err := os.Setenv("HOME", d); err != nil {
 		t.Fatalf(`os.Setenv("HOME", %s): %v != nil`, d, err)

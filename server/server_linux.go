@@ -6,13 +6,11 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
-	"unsafe"
 
 	"github.com/hashicorp/go-multierror"
 	"golang.org/x/sys/unix"
@@ -44,20 +42,12 @@ func init() {
 	// some other mechanism.
 	if os.Getpid() == 1 {
 	}
-	// Always privatize; all this means is that new mounts are only seen by self
-	// and children. The goal is to do the minimal set of things we must do,
-	// in case of an error by the user of this package.
-	privatize()
-	if os.Getpid() != 1 {
-		if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
-			log.Fatalf(`unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); %v != nil`, err)
-		}
-	}
-
 }
 
 // NameSpace assembles a NameSpace for this cpud, iff CPU_NONCE
 // is set and len(s.binds) > 0.
+// NOTE: this assumes we were started with CloneFlags set to CLONE_NEWNS.
+// If you don't do that, you will be sad.
 func (s *Session) Namespace() (error, error) {
 	if len(s.binds) == 0 {
 		return nil, nil
@@ -155,39 +145,14 @@ func osMounts() error {
 // 	}
 // }
 
-func privatize() {
-	// The unshare system call in Linux doesn't unshare mount points
-	// mounted with --shared. Systemd mounts / with --shared. For a
-	// long discussion of the pros and cons of this see debian bug 739593.
-	// The Go model of unsharing is more like Plan 9, where you ask
-	// to unshare and the namespaces are unconditionally unshared.
-	// To make this model work we must further mark / as MS_PRIVATE.
-	// This is what the standard unshare command does.
-	var (
-		none  = [...]byte{'n', 'o', 'n', 'e', 0}
-		slash = [...]byte{'/', 0}
-		flags = uintptr(unix.MS_PRIVATE | unix.MS_REC) // Thanks for nothing Linux.
-	)
-	// We assume that this was called via an unshare command or forked by
-	// a process with the CLONE_NEWS flag set. This call to Unshare used to work;
-	// no longer. We leave this code here as a signpost. Don't enable it.
-	// It won't work. Go's green threads and Linux name space code have
-	// never gotten along. Fixing it is hard, I've discussed this with the Go
-	// core from time to time and it's not a priority for them.
-	if err := syscall.Unshare(syscall.CLONE_NEWNS); err != nil {
-		log.Printf("CPUD:bad Unshare: %v", err)
-	}
-	// Make / private. This call *is* safe so far for reasons.
-	// Probably because, on many systems, we are lucky enough not to have a systemd
-	// there screwing up namespaces.
-	_, _, err1 := syscall.RawSyscall6(unix.SYS_MOUNT, uintptr(unsafe.Pointer(&none[0])), uintptr(unsafe.Pointer(&slash[0])), 0, flags, 0, 0)
-	if err1 != 0 {
-		log.Printf("CPUD:Warning: unshare failed (%v). There will be no private 9p mount if systemd is there", err1)
-	}
-}
-
 func command(n string, args ...string) *exec.Cmd {
 	cmd := exec.Command(n, args...)
+	// N.B.: in the go runtime, after not long ago, CLONE_NEWNS in the CloneFlags
+	// also does two things: an unshare, and a remount of / to unshare mounts.
+	// see d8ed449d8eae5b39ffe227ef7f56785e978dd5e2 in the go tree for a discussion.
+	// This meant we could remove ALL calls of unshare and mount from cpud.
+	// Fun fact: I wrote that fix years ago, and then forgot to remove
+	// the support code from cpu. Oops.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWNS}
 	return cmd
 }
