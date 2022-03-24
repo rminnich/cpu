@@ -126,11 +126,6 @@ func (s *Session) Namespace() (error, error) {
 
 func osMounts() error {
 	var errors error
-	if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
-		errors = fmt.Errorf("CPUD:Warning: tmpfs mount on /tmp (%v) failed. There will be no 9p mount", err)
-
-	}
-
 	// Further, bind / onto /tmp/local so a non-hacked-on version may be visible.
 	if err := unix.Mount("/", "/tmp/local", "", syscall.MS_BIND, ""); err != nil {
 		errors = multierror.Append(fmt.Errorf("CPUD:Warning: binding / over /tmp/cpu did not work: %v, continuing anyway", err))
