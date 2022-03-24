@@ -152,16 +152,26 @@ func (s *Session) Run() error {
 	// even if it is empty, server will try to do
 	// the 9p mount.
 	if b, ok := os.LookupEnv("CPU_NAMESPACE"); ok {
-		binds, err := ParseBinds(b)
-		if err != nil {
-			s.fail = true
-			err = multierror.Append(errors, err)
-		}
-		s.binds = binds
+		v("Set up a namespace")
 		if err := s.TmpMounts(); err != nil {
 			s.fail = true
 			errors = multierror.Append(err)
 		}
+
+		binds, err := ParseBinds(b)
+		if err != nil {
+			v("ParseBind failed: %v", err)
+			s.fail = true
+			err = multierror.Append(errors, err)
+		}
+
+		s.binds = binds
+		w, err := s.Namespace()
+		if err != nil {
+			return fmt.Errorf("CPUD:Namespace: warnings %v, err %v", w, err)
+		}
+		v("CPUD:warning: %v", w)
+
 	}
 	v("CPUD: bind mounts done")
 	if err := s.Terminal(); err != nil {

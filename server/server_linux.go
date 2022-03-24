@@ -128,7 +128,7 @@ func osMounts() error {
 	var errors error
 	// Further, bind / onto /tmp/local so a non-hacked-on version may be visible.
 	if err := unix.Mount("/", "/tmp/local", "", syscall.MS_BIND, ""); err != nil {
-		errors = multierror.Append(fmt.Errorf("CPUD:Warning: binding / over /tmp/cpu did not work: %v, continuing anyway", err))
+		errors = multierror.Append(fmt.Errorf("CPUD:Warning: binding / over /tmp/local did not work: %v, continuing anyway", err))
 	}
 	return errors
 }
