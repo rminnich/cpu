@@ -89,7 +89,7 @@ func TestNewServer(t *testing.T) {
 
 // Not sure testing this is a great idea but ... it works so ...
 func TestDropPrivs(t *testing.T) {
-	s := NewSession("/bin/true")
+	s := NewSession("", "/bin/true")
 	if err := s.DropPrivs(); err != nil {
 		t.Fatalf("s.DropPrivs(): %v != nil", err)
 	}
@@ -97,7 +97,7 @@ func TestDropPrivs(t *testing.T) {
 
 func TestRemoteNoNameSpace(t *testing.T) {
 	v = t.Logf
-	s := NewSession("/bin/echo", "hi")
+	s := NewSession("", "/bin/echo", "hi")
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
 	s.Stdin, s.Stdout, s.Stderr = nil, o, e
 	if err := s.Run(); err != nil {
@@ -190,11 +190,11 @@ func TestDaemonConnect(t *testing.T) {
 	// and client in line, e.g.
 	// socket/bind/listen/connect/accept
 	// oh well.
-	go func() {
+	go func(t*testing.T) {
 		if err := s.Serve(ln); err != nil {
-			t.Fatalf("s.Daemon(): %v != nil", err)
+			t.Errorf("s.Daemon(): %v != nil", err)
 		}
-	}()
+	}(t)
 	v = t.Logf
 	// From this test forward, at least try to get a port.
 	// For this test, there must be a key.

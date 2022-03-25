@@ -44,7 +44,7 @@ func init() {
 	}
 }
 
-// NameSpace assembles a NameSpace for this cpud, iff CPU_NONCE
+// Namespace assembles a NameSpace for this cpud, iff CPU_NONCE
 // is set and len(s.binds) > 0.
 // NOTE: this assumes we were started with CloneFlags set to CLONE_NEWNS.
 // If you don't do that, you will be sad.

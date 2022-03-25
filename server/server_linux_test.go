@@ -85,11 +85,11 @@ func TestDaemon(t *testing.T) {
 	// and client in line, e.g.
 	// socket/bind/listen/connect/accept
 	// oh well.
-	go func() {
+	go func(t*testing.T) {
 		if err := s.Serve(ln); err != nil {
-			t.Fatalf("s.Daemon(): %v != nil", err)
+			t.Errorf("s.Daemon(): %v != nil", err)
 		}
-	}()
+	}(t)
 	v = t.Logf
 	// From this test forward, at least try to get a port.
 	// For this test, there must be a key.

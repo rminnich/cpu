@@ -41,9 +41,10 @@ type Server struct {
 	port       string
 	publicKey  []byte
 	hostKeyPEM []byte
-	ssh        ssh.Server
+	ssh        *ssh.Server
 }
 
+// Session is one instance of a cpu session, started by a cpud.
 type Session struct {
 	restorer *termios.Termios
 	Stdin    io.Reader
@@ -136,7 +137,7 @@ func (s *Session) TmpMounts() error {
 	return nil
 }
 
-// Remote starts up a remote cpu session. It is started by a cpu
+// Run starts up a remote cpu session. It is started by a cpu
 // daemon via a -remote switch.
 // This code assumes that cpud is running as init, or that
 // an init has started a cpud, and that the code is running
@@ -294,7 +295,7 @@ func New() *Server {
 	return &Server{port: "23"}
 }
 
-// New returns a New session with defaults set.
+// NewSession returns a New session with defaults set.
 // TODO: should session be a separate package.
 func NewSession(port9p, cmd string, args ...string) *Session {
 	return &Session{msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, port9p: port9p, cmd: cmd, args: args}
@@ -471,7 +472,7 @@ func (s *Server) SSHConfig() *Server {
 	// Now we run as an ssh server, and each time we get a connection,
 	// we run that command after setting things up for it.
 	forwardHandler := &ssh.ForwardedTCPHandler{}
-	server := ssh.Server{
+	server := &ssh.Server{
 		LocalPortForwardingCallback: ssh.LocalPortForwardingCallback(func(ctx ssh.Context, dhost string, dport uint32) bool {
 			log.Println("CPUD:Accepted forward", dhost, dport)
 			return true
