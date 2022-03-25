@@ -55,7 +55,6 @@ type Session struct {
 	// went badly wrong in some step. At that point, if wtf is set,
 	// cpud will start it. This is incredibly handy for debugging.
 	fail   bool
-	wtf    string
 	msize  int
 	mopts  string
 	port9p string
@@ -63,12 +62,8 @@ type Session struct {
 	args   []string
 }
 
-// a nonce is a [32]byte containing only printable characters, suitable for use as a string
-type nonce [32]byte
-
 var (
-	pid1 bool
-	v    = log.Printf // func(string, ...interface{}) {}
+	v = log.Printf // func(string, ...interface{}) {}
 	// To get debugging when Things Go Wrong, you can run as, e.g., -wtf /bbin/elvish
 	// or change the value here to /bbin/elvish.
 	// This way, when Things Go Wrong, you'll be dropped into a shell and look around.
@@ -163,13 +158,13 @@ func (s *Session) Run() error {
 		if err != nil {
 			v("ParseBind failed: %v", err)
 			s.fail = true
-			err = multierror.Append(errors, err)
+			errors = multierror.Append(errors, err)
 		}
 
 		s.binds = binds
 		w, err := s.Namespace()
 		if err != nil {
-			return fmt.Errorf("CPUD:Namespace: warnings %v, err %v", w, err)
+			return fmt.Errorf("CPUD:Namespace: warnings %v, err %v", w, multierror.Append(errors, err))
 		}
 		v("CPUD:warning: %v", w)
 
@@ -218,7 +213,7 @@ func (s *Session) Run() error {
 }
 
 func setWinsize(f *os.File, w, h int) {
-	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ),
+	syscall.Syscall(syscall.SYS_IOCTL, f.Fd(), uintptr(syscall.TIOCSWINSZ), //nolint
 		uintptr(unsafe.Pointer(&struct{ h, w, x, y uint16 }{uint16(h), uint16(w), 0, 0})))
 }
 
@@ -255,9 +250,9 @@ func handler(s ssh.Session) {
 			}
 		}()
 		go func() {
-			io.Copy(f, s) // stdin
+			io.Copy(f, s) //nolint stdin
 		}()
-		io.Copy(s, f) // stdout
+		io.Copy(s, f) //nolint stdout
 		// Stdout is closed, "there's no more to the show/
 		// If you all want to breath right/you all better go"
 		// This is going to seem a bit odd, but it is important to
@@ -276,7 +271,7 @@ func handler(s ssh.Session) {
 		v("cmd %v returns with %v %v", err, cmd, cmd.ProcessState)
 		if errval(err) != nil {
 			v("CPUD:child exited with  %v", err)
-			s.Exit(cmd.ProcessState.ExitCode())
+			s.Exit(cmd.ProcessState.ExitCode()) //nolint
 		}
 
 	} else {
@@ -284,7 +279,7 @@ func handler(s ssh.Session) {
 		v("running command without pty")
 		if err := cmd.Run(); errval(err) != nil {
 			v("CPUD:err %v", err)
-			s.Exit(1)
+			s.Exit(1) //nolint
 		}
 	}
 	verbose("handler exits")
@@ -292,7 +287,7 @@ func handler(s ssh.Session) {
 
 // New returns a New server with defaults set.
 func New() *Server {
-	return &Server{port: "23"}
+	return &Server{port: defaultPort}
 }
 
 // NewSession returns a New session with defaults set.
@@ -456,13 +451,11 @@ func (s *Server) Listen() (net.Listener, error) {
 	return net.Listen("tcp", net.JoinHostPort(s.addr, s.port))
 }
 
-// SSHConfig configures a Server to serve SSH sessions.
-// ready to serve. starts a synchronous daemon, i.e. blocks until
-// it is done.
-// Assumptions:
-// This is not init. It is started by init. It will not reap zombies.
-// It will not create devices and common mounts (e.g. /proc)
-func (s *Server) SSHConfig() *Server {
+// Serve serves cpu sessions. It is the daemon mode: it does not do all that
+// init mode does, in particular it is not a process reaper, but it does
+// accept connections and start an instance of itself for each individual
+// connection. Per-connection startup is done in the handler.
+func (s *Server) Serve(ln net.Listener) error {
 	v("configure SSH server")
 	publicKeyOption := func(ctx ssh.Context, key ssh.PublicKey) bool {
 		allowed, _, _, _, _ := ssh.ParseAuthorizedKey(s.publicKey)
@@ -490,19 +483,10 @@ func (s *Server) SSHConfig() *Server {
 		Handler: handler,
 	}
 
-	server.SetOption(ssh.HostKeyPEM(s.hostKeyPEM))
+	server.SetOption(ssh.HostKeyPEM(s.hostKeyPEM)) //nolint
 
-	s.ssh = server
-	return s
-}
-
-// Serve serves cpu sessions. It is the daemon mode: it does not do all that
-// init mode does, in particular it is not a process reaper, but it does
-// accept connections and start an instance of itself for each individual
-// connection. Per-connection startup is done in the handler.
-func (s *Server) Serve(ln net.Listener) error {
 	log.Println("CPUD:starting ssh server on port " + s.port)
-	if err := s.ssh.Serve(ln); err != nil {
+	if err := server.Serve(ln); err != nil {
 		log.Printf("CPUD:err %v", err)
 	}
 	verbose("server.ListenAndServer returned")

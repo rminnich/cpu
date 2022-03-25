@@ -67,7 +67,7 @@ func TestDaemon(t *testing.T) {
 	}
 
 	v = t.Logf
-	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost").SSHConfig()
+	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
 
 	ln, err := s.Listen()
 	if err != nil {
