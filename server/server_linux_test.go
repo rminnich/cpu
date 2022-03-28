@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"os"
@@ -60,24 +59,23 @@ func TestDaemon(t *testing.T) {
 	if err := os.Setenv("HOME", d); err != nil {
 		t.Fatalf(`os.Setenv("HOME", %s): %v != nil`, d, err)
 	}
-	// https://github.com/kevinburke/ssh_config/issues/2
-	hackconfig := fmt.Sprintf(string(sshConfig), filepath.Join(d, ".ssh"))
-	if err := gendotssh(d, hackconfig); err != nil {
+	dotSSH := filepath.Join(d, ".ssh")
+	hackconfig, err := gendotssh(d, string(sshConfig))
+	if err != nil {
 		t.Fatalf(`gendotssh(%s): %v != nil`, d, err)
 	}
 
-	v = t.Logf
-	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
+	pubKey := filepath.Join(dotSSH, "server.pub")
+	s, err := New(pubKey, "")
+	if err != nil {
+		t.Fatalf("New(%q, %q): %v != nil", pubKey, "", err)
+	}
 
-	ln, err := s.Listen()
+	ln, err := net.Listen("tcp", "")
 	if err != nil {
 		t.Fatalf("s.Listen(): %v != nil", err)
 	}
 	t.Logf("Listening on %v", ln.Addr())
-	_, port, err := net.SplitHostPort(ln.Addr().String())
-	if err != nil {
-		t.Fatal(err)
-	}
 	// this is a racy test.
 	// The ssh package really ought to allow you to accept
 	// on a socket and then call with that socket. This would be
@@ -85,7 +83,7 @@ func TestDaemon(t *testing.T) {
 	// and client in line, e.g.
 	// socket/bind/listen/connect/accept
 	// oh well.
-	go func(t*testing.T) {
+	go func(t *testing.T) {
 		if err := s.Serve(ln); err != nil {
 			t.Errorf("s.Daemon(): %v != nil", err)
 		}
@@ -107,6 +105,11 @@ func TestDaemon(t *testing.T) {
 	if err != nil || len(kf) == 0 {
 		t.Fatalf(`cfg.Get("server", "IdentityFile"): (%q, %v) != (afilename, nil`, kf, err)
 	}
+	host, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("net.SplitHostPort(%q): %v != nil", ln.Addr(), err)
+	}
+
 	t.Logf("HostName %q, IdentityFile %q", host, kf)
 	c := client.Command(host, "ls", "-l").WithPrivateKeyFile(kf).WithPort(port).WithRoot("/").WithNameSpace("")
 	if err := c.Dial(); err != nil {

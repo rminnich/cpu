@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gliderlabs/ssh"
 	config "github.com/kevinburke/ssh_config"
 	"github.com/u-root/cpu/client"
 )
@@ -83,7 +84,10 @@ func TestParseBind(t *testing.T) {
 }
 
 func TestNewServer(t *testing.T) {
-	s := New()
+	s, err := New("", "")
+	if err != nil {
+		t.Fatalf(`New("", ""): %v != nil`, err)
+	}
 	t.Logf("New server: %v", s)
 }
 
@@ -112,34 +116,40 @@ func TestRemoteNoNameSpace(t *testing.T) {
 	}
 }
 
-func gendotssh(dir, config string) error {
+func gendotssh(dir, config string) (string, error) {
 	dotssh := filepath.Join(dir, ".ssh")
 	if err := os.MkdirAll(dotssh, 0700); err != nil {
-		return err
+		return "", err
 	}
+
+	// https://github.com/kevinburke/ssh_config/issues/2
+	hackconfig := fmt.Sprintf(string(sshConfig), filepath.Join(dir, ".ssh"))
 	for _, f := range []struct {
 		name string
 		val  []byte
 	}{
-		{name: "config", val: []byte(config)},
+		{name: "config", val: []byte(hackconfig)},
 		{name: "hostkey", val: hostKey},
 		{name: "server", val: privateKey},
 		{name: "server.pub", val: publicKey},
 	} {
 		if err := ioutil.WriteFile(filepath.Join(dotssh, f.name), f.val, 0644); err != nil {
-			return err
+			return "", err
 		}
 	}
-	return nil
+	return hackconfig, nil
 }
 
 func TestDaemonStart(t *testing.T) {
 	v = t.Logf
-	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
-
-	ln, err := s.Listen()
+	s, err := New("", "")
 	if err != nil {
-		t.Fatalf("s.Listen(): %v != nil", err)
+		t.Fatalf(`New("", ""): %v != nil`, err)
+	}
+
+	ln, err := net.Listen("tcp", "")
+	if err != nil {
+		t.Fatalf("net.Listen(): %v != nil", err)
 	}
 	t.Logf("Listening on %v", ln.Addr())
 	// this is a racy test.
@@ -147,8 +157,9 @@ func TestDaemonStart(t *testing.T) {
 		time.Sleep(5 * time.Second)
 		s.Close()
 	}()
-	if err := s.Serve(ln); err != nil {
-		t.Fatalf("s.Daemon(): %v != nil", err)
+
+	if err := s.Serve(ln); err != ssh.ErrServerClosed {
+		t.Fatalf("s.Daemon(): %v != %v", err, ssh.ErrServerClosed)
 	}
 	t.Logf("Daemon returns")
 }
@@ -165,18 +176,20 @@ func TestDaemonConnect(t *testing.T) {
 	if err := os.Setenv("HOME", d); err != nil {
 		t.Fatalf(`os.Setenv("HOME", %s): %v != nil`, d, err)
 	}
-	// https://github.com/kevinburke/ssh_config/issues/2
-	hackconfig := fmt.Sprintf(string(sshConfig), filepath.Join(d, ".ssh"))
-	if err := gendotssh(d, hackconfig); err != nil {
+	hackconfig, err := gendotssh(d, string(sshConfig))
+	if err != nil {
 		t.Fatalf(`gendotssh(%s): %v != nil`, d, err)
 	}
 
 	v = t.Logf
-	s := New().WithPort("").WithPublicKey(publicKey).WithHostKeyPEM(hostKey).WithAddr("localhost")
-
-	ln, err := s.Listen()
+	s, err := New("", "")
 	if err != nil {
-		t.Fatalf("s.Listen(): %v != nil", err)
+		t.Fatalf(`New("", ""): %v != nil`, err)
+	}
+
+	ln, err := net.Listen("tcp", "")
+	if err != nil {
+		t.Fatalf(`net.Listen("", ""): %v != nil`, err)
 	}
 	t.Logf("Listening on %v", ln.Addr())
 	_, port, err := net.SplitHostPort(ln.Addr().String())
@@ -190,7 +203,7 @@ func TestDaemonConnect(t *testing.T) {
 	// and client in line, e.g.
 	// socket/bind/listen/connect/accept
 	// oh well.
-	go func(t*testing.T) {
+	go func(t *testing.T) {
 		if err := s.Serve(ln); err != nil {
 			t.Errorf("s.Daemon(): %v != nil", err)
 		}

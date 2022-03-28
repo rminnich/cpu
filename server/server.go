@@ -7,8 +7,8 @@ package server
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
-	"net"
 	"os"
 	"os/exec"
 	"strings"
@@ -35,14 +35,16 @@ type Bind struct {
 	Remote string
 }
 
-// Server is an instance of a cpu server
-type Server struct {
-	addr       string // Addr is an address, see net.Dial
-	port       string
-	publicKey  []byte
-	hostKeyPEM []byte
-	ssh        *ssh.Server
-}
+// N.B. we used to have a Server type. But at some point I realized
+// that a cpu server is just an SSH server with a special handler.
+// Because one specializes the SSH server with cpu-specific attributes
+// such as port and handler, further containing that SSH server in a
+// CPU server led to awkwardness: the cpu Server struct contained
+// an SSH server struct which contained cpu-specific entities.
+// In the end, a CPU server is just an SSH server with some defaults
+// changed, so for now, we just make the cpu Server type an SSH
+// server type. Making our own type gives us an escape route
+// in the future should we realize we made a mistake.
 
 // Session is one instance of a cpu session, started by a cpud.
 type Session struct {
@@ -285,180 +287,26 @@ func handler(s ssh.Session) {
 	verbose("handler exits")
 }
 
-// New returns a New server with defaults set.
-func New() *Server {
-	return &Server{port: defaultPort}
-}
-
 // NewSession returns a New session with defaults set.
 // TODO: should session be a separate package.
 func NewSession(port9p, cmd string, args ...string) *Session {
 	return &Session{msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, port9p: port9p, cmd: cmd, args: args}
 }
 
-// WithPort sets the server port, i.e. an ssh server port.
-func (s *Server) WithPort(port string) *Server {
-	s.port = port
-	return s
-}
-
-// WithPublicKey sets the server public key (e.g. ~/.ssh/id_rsa.pub)
-func (s *Server) WithPublicKey(key []byte) *Server {
-	s.publicKey = key
-	return s
-}
-
-// WithHostKeyPEM sets the server HostKeyPEM
-func (s *Server) WithHostKeyPEM(key []byte) *Server {
-	s.hostKeyPEM = key
-	return s
-}
-
-// WithAddr sets the server listen address.
-func (s *Server) WithAddr(addr string) *Server {
-	s.addr = addr
-	return s
-}
-
-// func doInit() error {
-// 	if pid1 {
-// 		if err := cpuSetup(); err != nil {
-// 			log.Printf("CPUD:CPU setup error with cpu running as init: %v", err)
-// 		}
-// 		cmds := [][]string{{"/bin/sh"}, {"/bbin/dhclient", "-v"}}
-// 		verbose("Try to run %v", cmds)
-
-// 		for _, v := range cmds {
-// 			verbose("Let's try to run %v", v)
-// 			if _, err := os.Stat(v[0]); os.IsNotExist(err) {
-// 				verbose("it's not there")
-// 				continue
-// 			}
-
-// 			// I *love* special cases. Evaluate just the top-most symlink.
-// 			//
-// 			// In source mode, this would be a symlink like
-// 			// /buildbin/defaultsh -> /buildbin/elvish ->
-// 			// /buildbin/installcommand.
-// 			//
-// 			// To actually get the command to build, argv[0] has to end
-// 			// with /elvish, so we resolve one level of symlink.
-// 			if filepath.Base(v[0]) == "defaultsh" {
-// 				s, err := os.Readlink(v[0])
-// 				if err == nil {
-// 					v[0] = s
-// 				}
-// 				verbose("readlink of %v returns %v", v[0], s)
-// 				// and, well, it might be a relative link.
-// 				// We must go deeper.
-// 				d, b := filepath.Split(v[0])
-// 				d = filepath.Base(d)
-// 				v[0] = filepath.Join("/", os.Getenv("UROOT_ROOT"), d, b)
-// 				verbose("is now %v", v[0])
-// 			}
-
-// 			cmd := exec.Command(v[0], v[1:]...)
-// 			cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-// 			cmd.SysProcAttr = &syscall.SysProcAttr{Setctty: true, Setsid: true}
-// 			verbose("Run %v", cmd)
-// 			if err := cmd.Start(); err != nil {
-// 				verbose("CPUD:Error starting %v: %v", v, err)
-// 				continue
-// 			}
-// 		}
-// 	}
-// 	verbose("Kicked off startup jobs, now serve ssh")
-// 	publicKeyOption := func(ctx ssh.Context, key ssh.PublicKey) bool {
-// 		// Glob the users's home directory for all the
-// 		// possible keys?
-// 		data, err := ioutil.ReadFile(*pubKeyFile)
-// 		if err != nil {
-// 			fmt.Print(err)
-// 			return false
-// 		}
-// 		allowed, _, _, _, _ := ssh.ParseAuthorizedKey(data)
-// 		return ssh.KeysEqual(key, allowed)
-// 	}
-
-// 	// Now we run as an ssh server, and each time we get a connection,
-// 	// we run that command after setting things up for it.
-// 	forwardHandler := &ssh.ForwardedTCPHandler{}
-// 	server := ssh.Server{
-// 		LocalPortForwardingCallback: ssh.LocalPortForwardingCallback(func(ctx ssh.Context, dhost string, dport uint32) bool {
-// 			log.Println("CPUD:Accepted forward", dhost, dport)
-// 			return true
-// 		}),
-// 		Addr:             ":" + *port,
-// 		PublicKeyHandler: publicKeyOption,
-// 		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, host string, port uint32) bool {
-// 			log.Println("CPUD:attempt to bind", host, port, "granted")
-// 			return true
-// 		}),
-// 		RequestHandlers: map[string]ssh.RequestHandler{
-// 			"tcpip-forward":        forwardHandler.HandleSSHRequest,
-// 			"cancel-tcpip-forward": forwardHandler.HandleSSHRequest,
-// 		},
-// 		Handler: handler,
-// 	}
-
-// 	// start the process reaper
-// 	procs := make(chan uint)
-// 	verbose("Start the process reaper")
-// 	go cpuDone(procs)
-
-// 	server.SetOption(ssh.HostKeyFile(*hostKeyFile))
-// 	log.Println("CPUD:starting ssh server on port " + *port)
-// 	if err := server.ListenAndServe(); err != nil {
-// 		log.Printf("CPUD:err %v", err)
-// 	}
-// 	verbose("server.ListenAndServer returned")
-
-// 	numprocs := <-procs
-// 	verbose("Reaped %d procs", numprocs)
-// 	return nil
-// }
-
-// // TODO: we've been tryinmg to figure out the right way to do usage for years.
-// // If this is a good way, it belongs in the uroot package.
-// func usage() {
-// 	var b bytes.Buffer
-// 	flag.CommandLine.SetOutput(&b)
-// 	flag.PrintDefaults()
-// 	log.Fatalf("Usage: cpu [options] host [shell command]:\n%v", b.String())
-// }
-
-// func main() {
-// 	verbose("Args %v pid %d *runasinit %v *remote %v", os.Args, os.Getpid(), *runAsInit, *remote)
-// 	args := flag.Args()
-// 	switch {
-// 	case *runAsInit:
-// 		verbose("Running as Init")
-// 		if err := doInit(); err != nil {
-// 			log.Fatalf("CPUD(as init):%v", err)
-// 		}
-// 	case *remote:
-// 		verbose("Running as remote")
-// 		if err := runRemote(strings.Join(args, " "), *port9p); err != nil {
-// 			log.Fatalf("CPUD(as remote):%v", err)
-// 		}
-// 	default:
-// 		log.Fatal("CPUD:can only run as remote or pid 1")
-// 	}
-// }
-
-// Listen returns a net.Listener for a Server.
-func (s *Server) Listen() (net.Listener, error) {
-	return net.Listen("tcp", net.JoinHostPort(s.addr, s.port))
-}
-
-// Serve serves cpu sessions. It is the daemon mode: it does not do all that
-// init mode does, in particular it is not a process reaper, but it does
-// accept connections and start an instance of itself for each individual
-// connection. Per-connection startup is done in the handler.
-func (s *Server) Serve(ln net.Listener) error {
+// NewSSHServer starts up a server for a cpu server.
+func New(publicKeyFile, hostKeyFile string) (*ssh.Server, error) {
 	v("configure SSH server")
 	publicKeyOption := func(ctx ssh.Context, key ssh.PublicKey) bool {
-		allowed, _, _, _, _ := ssh.ParseAuthorizedKey(s.publicKey)
+		data, err := ioutil.ReadFile(publicKeyFile)
+		if err != nil {
+			fmt.Print(err)
+			return false
+		}
+		allowed, _, _, _, err := ssh.ParseAuthorizedKey(data)
+		if err != nil {
+			fmt.Print(err)
+			return false
+		}
 		return ssh.KeysEqual(key, allowed)
 	}
 
@@ -470,7 +318,9 @@ func (s *Server) Serve(ln net.Listener) error {
 			log.Println("CPUD:Accepted forward", dhost, dport)
 			return true
 		}),
-		Addr:             s.addr + ":" + s.port,
+		// Pick a reasonable default, which can be used for a call to listen and which
+		// will be overridden later from a listen.Addr
+		Addr:             ":23",
 		PublicKeyHandler: publicKeyOption,
 		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, host string, port uint32) bool {
 			log.Println("CPUD:attempt to bind", host, port, "granted")
@@ -483,19 +333,9 @@ func (s *Server) Serve(ln net.Listener) error {
 		Handler: handler,
 	}
 
-	server.SetOption(ssh.HostKeyPEM(s.hostKeyPEM)) //nolint
-
-	log.Println("CPUD:starting ssh server on port " + s.port)
-	if err := server.Serve(ln); err != nil {
-		log.Printf("CPUD:err %v", err)
+	if err := server.SetOption(ssh.HostKeyFile(hostKeyFile)); err != nil {
+		// We don't much care about this, what's the right thing to do here?
+		// just printint from this function is kind of icky.
 	}
-	verbose("server.ListenAndServer returned")
-	return nil
-}
-
-// Close closes a CPU session. It does not terminate any active
-// session, but it will stop any new connections.
-func (s *Server) Close() error {
-	v("CPUD: closing SSH session")
-	return s.ssh.Close()
+	return server, nil
 }
