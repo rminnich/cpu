@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -167,11 +166,6 @@ func TestDaemonStart(t *testing.T) {
 // TestDaemonConnect tests connecting to a daemon and exercising
 // minimal operations.
 func TestDaemonConnect(t *testing.T) {
-	cpud, err := exec.LookPath("cpud")
-	if err != nil {
-		t.Skipf("Sorry, no cpud, skipping this test")
-	}
-	t.Logf("cpud path is %q", cpud)
 	d := t.TempDir()
 	if err := os.Setenv("HOME", d); err != nil {
 		t.Fatalf(`os.Setenv("HOME", %s): %v != nil`, d, err)
@@ -182,9 +176,9 @@ func TestDaemonConnect(t *testing.T) {
 	}
 
 	v = t.Logf
-	s, err := New("", "")
+	s, err := New(filepath.Join(d, ".ssh", "server.pub"), filepath.Join(d, ".ssh", "hostkey"))
 	if err != nil {
-		t.Fatalf(`New("", ""): %v != nil`, err)
+		t.Fatalf(`New(%q, %q): %v != nil`, filepath.Join(d, ".ssh", "server.pub"), filepath.Join(d, ".ssh", "hostkey"), err)
 	}
 
 	ln, err := net.Listen("tcp", "")
