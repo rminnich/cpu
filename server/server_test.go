@@ -6,8 +6,10 @@ package server
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -99,6 +101,9 @@ func TestDropPrivs(t *testing.T) {
 }
 
 func TestRemoteNoNameSpace(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skipf("Skipping as we are not root")
+	}
 	v = t.Logf
 	s := NewSession("", "/bin/echo", "hi")
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
@@ -163,9 +168,25 @@ func TestDaemonStart(t *testing.T) {
 	t.Logf("Daemon returns")
 }
 
+func TestDaemonConnectHelper(t *testing.T) {
+	if _, ok := os.LookupEnv("GO_WANT_DAEMON_HELPER_PROCESS"); !ok {
+		t.Logf("just a helper")
+		return
+	}
+	t.Logf("As a helper, we are supposed to run %q", args)
+	s := NewSession(port9p, args[0], args[1:]...)
+	// Step through the things a server is supposed to do with a session
+	if err := s.Run(); err != nil {
+		log.Fatalf("CPUD(as remote):%v", err)
+	}
+}
+
 // TestDaemonConnect tests connecting to a daemon and exercising
 // minimal operations.
 func TestDaemonConnect(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skipf("Skipping as we are not root")
+	}
 	d := t.TempDir()
 	if err := os.Setenv("HOME", d); err != nil {
 		t.Fatalf(`os.Setenv("HOME", %s): %v != nil`, d, err)
@@ -220,7 +241,8 @@ func TestDaemonConnect(t *testing.T) {
 		t.Fatalf(`cfg.Get("server", "IdentityFile"): (%q, %v) != (afilename, nil`, kf, err)
 	}
 	t.Logf("HostName %q, IdentityFile %q", host, kf)
-	c := client.Command(host, "ls", "-l").WithPrivateKeyFile(kf).WithPort(port).WithRoot("/").WithNameSpace("")
+	c := client.Command(host, "date").WithPrivateKeyFile(kf).WithPort(port).WithRoot("/").WithNameSpace("").WithCommand(os.Args[0] + " -test.run TestDaemonConnectHelper -test.v --")
+	c.Env = append(c.Env, "GO_WANT_DAEMON_HELPER_PROCESS=1")
 	if err := c.Dial(); err != nil {
 		t.Fatalf("Dial: got %v, want nil", err)
 	}
@@ -243,4 +265,34 @@ func TestDaemonConnect(t *testing.T) {
 		t.Errorf("Outputs: got %v, want nil", err)
 	}
 	t.Logf("c.Run: (%v, %q, %q)", err, r[0].String(), r[1].String())
+}
+
+var (
+	args   []string
+	port9p string
+)
+
+func TestMain(m *testing.M) {
+	// Strip out the args after --
+	x := -1
+	var osargs = os.Args
+	for i := range os.Args {
+		if x > 0 {
+			args = os.Args[i:]
+			break
+		}
+		if os.Args[i] == "--" {
+			osargs = os.Args[:i]
+			x = i
+		}
+	}
+	// Process any port9p directive
+	if len(args) > 1 && args[0] == "-port9p" {
+		port9p = args[1]
+		args = args[2:]
+	}
+	os.Args = osargs
+	log.Printf("os.Args %v, args %v", os.Args, args)
+	flag.Parse()
+	os.Exit(m.Run())
 }

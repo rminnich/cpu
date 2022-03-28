@@ -44,6 +44,9 @@ func TestHelperProcess(t *testing.T) {
 // file. When it exits, and returns to us, that file should
 // not be visible.
 func TestPrivateNameSpace(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skipf("Skipping; not root")
+	}
 	d := t.TempDir()
 	t.Logf("Call helper %q", os.Args[0])
 	c := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "-test.v")
@@ -65,7 +68,11 @@ func TestPrivateNameSpace(t *testing.T) {
 }
 
 // Now the fun begins. We have to be a demon.
-func TestDaemon(t *testing.T) {
+func TestDaemonSession(t *testing.T) {
+	if os.Getuid() != 0 {
+		t.Skipf("Skipping as we are not root")
+	}
+
 	runtime.GOMAXPROCS(1)
 	v = t.Logf
 	d := t.TempDir()
@@ -124,8 +131,9 @@ func TestDaemon(t *testing.T) {
 		t.Fatalf("net.SplitHostPort(%q): %v != nil", ln.Addr(), err)
 	}
 
-	t.Logf("HostName %q, IdentityFile %q", host, kf)
-	c := client.Command(host, "ls", "-l").WithPrivateKeyFile(kf).WithPort(port).WithRoot("/").WithNameSpace("")
+	t.Logf("HostName %q, IdentityFile %q, command %v", host, kf, os.Args[0])
+	client.V = t.Logf
+	c := client.Command(host, "ls", "-l").WithPrivateKeyFile(kf).WithPort(port).WithRoot(d).WithNameSpace(d).WithCommand(os.Args[0] + "-remote -bin " + os.Args[0])
 	if err := c.Dial(); err != nil {
 		t.Fatalf("Dial: got %v, want nil", err)
 	}

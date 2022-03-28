@@ -121,6 +121,13 @@ func Command(host string, args ...string) *Cmd {
 	}
 }
 
+// WithCcmmand sets the command to run on the remote cpud.
+func (c *Cmd) WithCommand(cmd string) *Cmd {
+	V("with command %q", cmd)
+	c.cmd = cmd
+	return c
+}
+
 // WithNameSpace sets the namespace to Cmd.There is no default: having some default
 // violates the principle of least surprise for package users.
 // The word "none" is reserved to mean the package will not set the
@@ -184,10 +191,6 @@ func (c *Cmd) Dial() error {
 	// Specifying a root is required for a remote namespace.
 	if len(c.Root) == 0 {
 		return nil
-	}
-	// If the namespace is empty, a nameserver won't be started
-	if _, ok := os.LookupEnv("CPU_NAMESPACE"); !ok {
-		return fmt.Errorf("Root is set to %q but there is no CPU_NAMESPACE", c.Root)
 	}
 
 	// Arrange port forwarding from remote ssh to our server.

@@ -12,7 +12,10 @@ require (
 	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
 )
 
-require github.com/hashicorp/errwrap v1.0.0 // indirect
+require (
+	github.com/hashicorp/errwrap v1.0.0 // indirect
+	golang.org/x/tools v0.1.10 // indirect
+)
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect

@@ -18,7 +18,7 @@ import (
 // is set.
 // CPU_NAMESPACE can be the empty string.
 // It also requires that CPU_NONCE exist.
-func (s *Server) NameSpace() (error, error) {
+func (s *Session) Namespace() (error, error) {
 	var warning error
 	// Get the nonce and remove it from the environment.
 	// N.B. We do not save the nonce in the cpu struct.
@@ -27,9 +27,9 @@ func (s *Server) NameSpace() (error, error) {
 	v("CPUD:namespace is %q", s.binds)
 
 	// Connect to the socket, return the nonce.
-	a := net.JoinHostPort("127.0.0.1", *port9p)
+	a := net.JoinHostPort("127.0.0.1", s.port9p)
 	v("CPUD:Dial %v", a)
-	so, err := net.Dial("tcp4", a)
+	so, err := net.Dial("tcp", a)
 	if err != nil {
 		return warning, fmt.Errorf("CPUD:Dial 9p port: %v", err)
 	}
