@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"testing"
 
 	config "github.com/kevinburke/ssh_config"
 	"github.com/u-root/cpu/client"
+	"golang.org/x/sys/unix"
 )
 
 func TestHelperProcess(t *testing.T) {
@@ -21,33 +24,44 @@ func TestHelperProcess(t *testing.T) {
 		t.Logf("just a helper")
 		return
 	}
-	// See if the directory exists. If it does, that's an error
-	if _, err := os.Stat(v); err == nil {
-		os.Exit(1)
+	t.Logf("Check %q", v)
+	if err := unix.Mount("cpu", v, "tmpfs", 0, ""); err != nil {
+		t.Fatalf("unix.Mount(cpu, %q, \"tmpfs\"): %v != nil", v, err)
 	}
 
+	vanish := filepath.Join(v, "vanish")
+	t.Logf("Mount ok, try to create %q", vanish)
+	msg := "This should not be visible in the parent"
+	if err := ioutil.WriteFile(vanish, []byte(msg), 0644); err != nil {
+		t.Fatalf(`ioutil.WriteFile(%q, %q, 0644): %v != nil`, vanish, msg, err)
+	}
+	t.Logf("Created %q", vanish)
 }
 
 // TestPrivateNameSpace tests if we are privatizing mounts
-// correctly. Because the private tmp mount is not a given,
-// i.e. it only happens if we have a CPU_NAMESPACE,
-// this test further does a tmpfs mount.
+// correctly. We spawn a child with syscall.CLONE_NEWNS set.
+// The child mounts a tmpfs over the directory, and creates a
+// file. When it exits, and returns to us, that file should
+// not be visible.
 func TestPrivateNameSpace(t *testing.T) {
 	d := t.TempDir()
 	t.Logf("Call helper %q", os.Args[0])
-	c := exec.Command(os.Args[0], "-test.run=TestHelperProcess")
+	c := exec.Command(os.Args[0], "-test.run=TestHelperProcess", "-test.v")
 	c.Env = []string{"GO_WANT_HELPER_PROCESS=" + d}
+	c.SysProcAttr = &syscall.SysProcAttr{Unshareflags: syscall.CLONE_NEWNS}
 	o, err := c.CombinedOutput()
 	t.Logf("out %s", o)
 	if err != nil {
-		//		exitErr, ok := err.(*exec.ExitError)
-		//	if !ok {
 		t.Errorf("Error: %v", err)
-
-		//		}
-		//		retCode = exitErr.Sys().(syscall.WaitStatus).ExitStatus()
 	}
-
+	vanish := filepath.Join(d, "vanish")
+	if _, err := os.Stat(vanish); err == nil {
+		t.Logf("Privatization failed ... Try to unmount %v", d)
+		if err := unix.Unmount(d, unix.MNT_FORCE); err != nil {
+			t.Fatalf("unix.Unmount( %q, %#x): %v != nil", d, unix.MNT_FORCE, err)
+		}
+		t.Fatalf("os.Stat(%q): nil != err", vanish)
+	}
 }
 
 // Now the fun begins. We have to be a demon.

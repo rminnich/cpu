@@ -47,7 +47,7 @@ func init() {
 
 // Namespace assembles a NameSpace for this cpud, iff CPU_NONCE
 // is set and len(s.binds) > 0.
-// NOTE: this assumes we were started with CloneFlags set to CLONE_NEWNS.
+// NOTE: this assumes we were started with Unshareflags set to CLONE_NEWNS.
 // If you don't do that, you will be sad.
 func (s *Session) Namespace() (error, error) {
 	if len(s.binds) == 0 {
@@ -143,12 +143,12 @@ func osMounts() error {
 
 func command(n string, args ...string) *exec.Cmd {
 	cmd := exec.Command(n, args...)
-	// N.B.: in the go runtime, after not long ago, CLONE_NEWNS in the CloneFlags
+	// N.B.: in the go runtime, after not long ago, CLONE_NEWNS in the Unshareflags
 	// also does two things: an unshare, and a remount of / to unshare mounts.
 	// see d8ed449d8eae5b39ffe227ef7f56785e978dd5e2 in the go tree for a discussion.
 	// This meant we could remove ALL calls of unshare and mount from cpud.
 	// Fun fact: I wrote that fix years ago, and then forgot to remove
 	// the support code from cpu. Oops.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Cloneflags: syscall.CLONE_NEWNS}
+	cmd.SysProcAttr = &syscall.SysProcAttr{Unshareflags: syscall.CLONE_NEWNS}
 	return cmd
 }
