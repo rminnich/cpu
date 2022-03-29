@@ -152,3 +152,11 @@ func command(n string, args ...string) *exec.Cmd {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Unshareflags: syscall.CLONE_NEWNS}
 	return cmd
 }
+
+// runSetup performs kernel-specific operations for starting a Session.
+func runSetup() error {
+	if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
+		return fmt.Errorf(`unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); %v != nil`, err)
+	}
+	return nil
+}

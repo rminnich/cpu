@@ -14,7 +14,7 @@ import (
 	"os/exec"
 )
 
-// NameSpace assembles a NameSpace for this cpud, iff CPU_NAMESPACE
+// Namespace assembles a NameSpace for this cpud, iff CPU_NAMESPACE
 // is set.
 // CPU_NAMESPACE can be the empty string.
 // It also requires that CPU_NONCE exist.
@@ -57,5 +57,7 @@ func command(n string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func privatize() {
+// runSetup performs kernel-specific operations for starting a Session.
+func runSetup() error {
+	return nil
 }

@@ -35,26 +35,26 @@ func TestParseBind(t *testing.T) {
 		{
 			in: "/bin",
 			out: []Bind{
-				Bind{Local: "/bin", Remote: "/bin"},
+				{Local: "/bin", Remote: "/bin"},
 			},
 		},
 		{
 			in: "/bin", out: []Bind{
-				Bind{Local: "/bin", Remote: "/bin"},
+				{Local: "/bin", Remote: "/bin"},
 			},
 		},
 
 		{
 			in: "/bin=/home/user/bin",
 			out: []Bind{
-				Bind{Local: "/bin", Remote: "/home/user/bin"},
+				{Local: "/bin", Remote: "/home/user/bin"},
 			},
 		},
 		{
 			in: "/bin=/home/user/bin:/home",
 			out: []Bind{
-				Bind{Local: "/bin", Remote: "/home/user/bin"},
-				Bind{Local: "/home", Remote: "/home"},
+				{Local: "/bin", Remote: "/home/user/bin"},
+				{Local: "/home", Remote: "/home"},
 			},
 		},
 	}
@@ -105,15 +105,15 @@ func TestRemoteNoNameSpace(t *testing.T) {
 		t.Skipf("Skipping as we are not root")
 	}
 	v = t.Logf
-	s := NewSession("", "/bin/echo", "hi")
+	s := NewSession("", "date")
 	o, e := &bytes.Buffer{}, &bytes.Buffer{}
 	s.Stdin, s.Stdout, s.Stderr = nil, o, e
 	if err := s.Run(); err != nil {
-		t.Fatalf(`s.Run("echo hi", 0): %v != nil`, err)
+		t.Fatalf(`s.Run("", "date"): %v != nil`, err)
 	}
 	t.Logf("%q %q", o, e)
-	if o.String() != "hi\n" {
-		t.Errorf("command output: %q != %q", o.String(), "hi\n")
+	if len(o.String()) == 0 {
+		t.Errorf("no command output: \"\" != non-zero-length string")
 	}
 	if e.String() != "" {
 		t.Errorf("command error: %q != %q", e.String(), "")

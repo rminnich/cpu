@@ -143,8 +143,9 @@ func (s *Session) TmpMounts() error {
 // calls DropPrivs.
 func (s *Session) Run() error {
 	var errors error
-	if err := unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); err != nil {
-		log.Fatalf(`unix.Mount("cpu", "/tmp", "tmpfs", 0, ""); %v != nil`, err)
+
+	if err := runSetup(); err != nil {
+		return err
 	}
 	// N.B. if the namespace variable is set,
 	// even if it is empty, server will try to do
