@@ -6,8 +6,10 @@ package server
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -254,7 +256,7 @@ func TestDaemonConnect(t *testing.T) {
 			t.Fatalf("Close: got %v, want nil", err)
 		}
 	}()
-	if err := c.Stdin.Close(); err != nil {
+	if err := c.Stdin.Close(); err != nil && !errors.Is(err, io.EOF) {
 		t.Errorf("Close stdin: Got %v, want nil", err)
 	}
 	if err := c.Wait(); err != nil {
