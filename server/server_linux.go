@@ -6,10 +6,8 @@ package server
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"syscall"
 
 	"github.com/hashicorp/go-multierror"
@@ -43,86 +41,6 @@ func init() {
 	if os.Getpid() == 1 {
 		v("PID 1")
 	}
-}
-
-// Namespace assembles a NameSpace for this cpud, iff CPU_NONCE
-// is set and len(s.binds) > 0.
-// NOTE: this assumes we were started with Unshareflags set to CLONE_NEWNS.
-// If you don't do that, you will be sad.
-func (s *Session) Namespace() (error, error) {
-	if len(s.binds) == 0 {
-		return nil, nil
-	}
-	// Get the nonce and remove it from the environment.
-	// N.B. We do not save the nonce in the cpu struct.
-	nonce, ok := os.LookupEnv("CPUNONCE")
-	if !ok {
-		return nil, nil
-	}
-	os.Unsetenv("CPUNONCE")
-	v("CPUD:namespace is %q", s.binds)
-
-	// Connect to the socket, return the nonce.
-	a := net.JoinHostPort("127.0.0.1", s.port9p)
-	v("CPUD:Dial %v", a)
-	so, err := net.Dial("tcp4", a)
-	if err != nil {
-		return nil, fmt.Errorf("CPUD:Dial 9p port: %v", err)
-	}
-	v("CPUD:Connected: write nonce %s\n", nonce)
-	if _, err := fmt.Fprintf(so, "%s", nonce); err != nil {
-		return nil, fmt.Errorf("CPUD:Write nonce: %v", err)
-	}
-	v("CPUD:Wrote the nonce")
-	// Zero it. I realize I am not a crypto person.
-	// improvements welcome.
-	copy([]byte(nonce), make([]byte, len(nonce)))
-
-	// the kernel takes over the socket after the Mount.
-	defer so.Close()
-	flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
-	cf, err := so.(*net.TCPConn).File()
-	if err != nil {
-		return nil, fmt.Errorf("CPUD:Cannot get fd for %v: %v", so, err)
-	}
-
-	fd := cf.Fd()
-	v("CPUD:fd is %v", fd)
-
-	user := os.Getenv("USER")
-	if user == "" {
-		user = "nouser"
-	}
-
-	// The debug= option is here so you can see how to temporarily set it if needed.
-	// It generates copious output so use it sparingly.
-	// A useful compromise value is 5.
-	opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, s.msize)
-	if len(s.mopts) > 0 {
-		opts += "," + s.mopts
-	}
-	v("CPUD: mount 127.0.0.1 on /tmp/cpu 9p %#x %s", flags, opts)
-	if err := unix.Mount("127.0.0.1", "/tmp/cpu", "9p", flags, opts); err != nil {
-		return nil, fmt.Errorf("9p mount %v", err)
-	}
-	v("CPUD: mount done")
-
-	// In some cases if you set LD_LIBRARY_PATH it is ignored.
-	// This is disappointing to say the least. We just bind a few things into /
-	// bind *may* hide local resources but for now it's the least worst option.
-	var warning error
-	for _, n := range s.binds {
-		t := filepath.Join("/tmp/cpu", n.Remote)
-		v("CPUD: mount %v over %v", t, n.Local)
-		if err := unix.Mount(t, n.Local, "", syscall.MS_BIND, ""); err != nil {
-			s.fail = true
-			warning = multierror.Append(fmt.Errorf("CPUD:Warning: mounting %v on %v failed: %v", t, n, err))
-		} else {
-			v("CPUD:Mounted %v on %v", t, n)
-		}
-
-	}
-	return warning, nil
 }
 
 func osMounts() error {
