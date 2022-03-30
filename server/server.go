@@ -294,7 +294,8 @@ func NewSession(port9p, cmd string, args ...string) *Session {
 	return &Session{msize: 8192, Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr, port9p: port9p, cmd: cmd, args: args}
 }
 
-// NewSSHServer starts up a server for a cpu server.
+// New sets up a cpud. cpud is really just an SSH server with a special
+// handler and support for port forwarding for the 9p port.
 func New(publicKeyFile, hostKeyFile string) (*ssh.Server, error) {
 	v("configure SSH server")
 	publicKeyOption := func(ctx ssh.Context, key ssh.PublicKey) bool {
@@ -324,7 +325,7 @@ func New(publicKeyFile, hostKeyFile string) (*ssh.Server, error) {
 		Addr:             ":23",
 		PublicKeyHandler: publicKeyOption,
 		ReversePortForwardingCallback: ssh.ReversePortForwardingCallback(func(ctx ssh.Context, host string, port uint32) bool {
-			log.Println("CPUD:attempt to bind", host, port, "granted")
+			v("CPUD:attempt to bind", host, port, "granted")
 			return true
 		}),
 		RequestHandlers: map[string]ssh.RequestHandler{
