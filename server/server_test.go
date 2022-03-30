@@ -90,14 +90,6 @@ func TestNewServer(t *testing.T) {
 	t.Logf("New server: %v", s)
 }
 
-// Not sure testing this is a great idea but ... it works so ...
-func TestDropPrivs(t *testing.T) {
-	s := NewSession("", "/bin/true")
-	if err := s.DropPrivs(); err != nil {
-		t.Fatalf("s.DropPrivs(): %v != nil", err)
-	}
-}
-
 func TestRemoteNoNameSpace(t *testing.T) {
 	if os.Getuid() != 0 {
 		t.Skipf("Skipping as we are not root")
