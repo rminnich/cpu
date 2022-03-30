@@ -410,7 +410,7 @@ func usage() {
 
 func newCPU(host string, args ...string) error {
 	client.V = v
-	c := client.Command(host, args...).WithPrivateKeyFile(*keyFile).WithPort(*port).WithRoot(*root).WithNameSpace(*namespace)
+	c := client.Command(host, args...).WithPrivateKeyFile(*keyFile).WithPort(*port).WithRoot(*root).WithNameSpace(*namespace).WithCommand(*runCmd)
 	if err := c.Dial(); err != nil {
 		return fmt.Errorf("Dial: got %v, want nil", err)
 	}
