@@ -25,7 +25,7 @@ import (
 	"github.com/gliderlabs/ssh"
 	"github.com/hashicorp/go-multierror"
 	"github.com/kr/pty" // TODO: get rid of krpty
-	"github.com/u-root/cpu/server"
+	"github.com/u-root/cpu/session"
 	"github.com/u-root/u-root/pkg/termios"
 	"github.com/u-root/u-root/pkg/ulog"
 	"golang.org/x/sys/unix"
@@ -622,7 +622,7 @@ func main() {
 	case *remote:
 		if sawNew {
 			verbose("server package: Running as remote: args %q, port9p %v", args, *port9p)
-			s := server.NewSession(*port9p, args[0], args[1:]...)
+			s := session.New(*port9p, args[0], args[1:]...)
 			if err := s.Run(); err != nil {
 				log.Fatalf("CPUD(as remote):%v", err)
 			}
