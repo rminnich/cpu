@@ -235,7 +235,7 @@ func errval(err error) error {
 
 func handler(s ssh.Session) {
 	a := s.Command()
-	v("handler: cmd is %v", a)
+	v("handler: cmd is %q", a)
 	cmd := command(a[0], a[1:]...)
 	cmd.Env = append(cmd.Env, s.Environ()...)
 	ptyReq, winCh, isPty := s.Pty()
@@ -269,9 +269,9 @@ func handler(s ssh.Session) {
 		// competing with each other and the results are odd to say the least.
 		// If the command exits, leaving orphans behind, it is the job
 		// of the reaper to get them.
-		v("wait for %v", cmd)
+		v("wait for %q", cmd)
 		err = cmd.Wait()
-		v("cmd %v returns with %v %v", err, cmd, cmd.ProcessState)
+		v("cmd %q returns with %v %v", cmd, err, cmd.ProcessState)
 		if errval(err) != nil {
 			v("CPUD:child exited with  %v", err)
 			s.Exit(cmd.ProcessState.ExitCode()) //nolint

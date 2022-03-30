@@ -425,7 +425,7 @@ func handler(s ssh.Session) {
 	if *debug {
 		a = append([]string{a[0], "-d"}, a[1:]...)
 	}
-	v("handler: cmd is %v", a)
+	v("CPUD:handler: cmd is %q", a)
 	cmd := exec.Command(a[0], a[1:]...)
 	// N.B.: in the go runtime, after not long ago, CLONE_NEWNS in the CloneFlags
 	// also does two things: an unshare, and a remount of / to unshare mounts.
