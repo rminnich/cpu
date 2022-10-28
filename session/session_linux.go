@@ -6,12 +6,16 @@ package session
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hugelgupf/p9/p9"
+	"github.com/jacobsa/fuse"
 	"golang.org/x/sys/unix"
 )
 
@@ -93,33 +97,84 @@ func (s *Session) Namespace() (error, error) {
 	// improvements welcome.
 	copy([]byte(nonce), make([]byte, len(nonce)))
 
-	// the kernel takes over the socket after the Mount.
-	defer so.Close()
-	flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
 	cf, err := so.(*net.TCPConn).File()
 	if err != nil {
 		return nil, fmt.Errorf("CPUD:Cannot get fd for %v: %v", so, err)
 	}
-
-	fd := cf.Fd()
-	verbose("fd is %v", fd)
 
 	user := os.Getenv("USER")
 	if user == "" {
 		user = "nouser"
 	}
 
-	// The debug= option is here so you can see how to temporarily set it if needed.
-	// It generates copious output so use it sparingly.
-	// A useful compromise value is 5.
-	opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, s.msize)
-	if len(s.mopts) > 0 {
-		opts += "," + s.mopts
-	}
+	// test value for trying out FUSE to 9p
+	// This has an advantage that FUSE has good integration with
+	// the kernel page cache, and, further, we can implement
+	// readahead in cpud.
 	mountTarget := filepath.Join(s.tmpMnt, "cpu")
-	verbose("mount 127.0.0.1 on %s 9p %#x %s", mountTarget, flags, opts)
-	if err := unix.Mount("localhost", mountTarget, "9p", flags, opts); err != nil {
-		return nil, fmt.Errorf("9p mount %v", err)
+	if os.Getenv("CPUD_FUSE") != "" {
+		v("CPUD: using FUSE to 9P gateway")
+		// When we get here, the FD has been verified.
+		// The 9p version and attach need to run.
+		cl, err := p9.NewClient(cf, p9.WithMessageSize(128*1024))
+		if err != nil {
+			return nil, err
+		}
+		root, err := cl.Attach("/")
+		if err != nil {
+			return nil, err
+		}
+
+		s.cl = cl
+		s.root = root
+
+		fs, cfs, err := NewP9FS(cl, root, 5*time.Second, 5*time.Second)
+		if err != nil {
+			return nil, err
+		}
+
+		s.fs = fs
+		s.cfs = cfs
+		// This will need to move to the kernel-independent part at some point.
+		c := &fuse.MountConfig{
+			ErrorLogger: log.Default(),
+			DebugLogger: log.Default(),
+			// This must be set, else you will get
+			// fuse: Bad value for 'source'
+			// and the mount will fail
+			FSName: "cpud",
+		}
+		mfs, err := fuse.Mount(mountTarget, fs, c)
+		if err != nil {
+			return nil, err
+		}
+		s.mfs = mfs
+		// annoying but clean up later.
+		s.cfs.inMap[1] = entry{
+			fid:  root,
+			root: true,
+			ino:  1,
+		}
+	} else {
+		v("CPUD: using 9P")
+		// the kernel takes over the socket after the Mount.
+		defer so.Close()
+
+		flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
+		fd := cf.Fd()
+		v("CPUD:fd is %v", fd)
+
+		// The debug= option is here so you can see how to temporarily set it if needed.
+		// It generates copious output so use it sparingly.
+		// A useful compromise value is 5.
+		opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, s.msize)
+		if len(s.mopts) > 0 {
+			opts += "," + s.mopts
+		}
+		v("CPUD: mount 127.0.0.1 on %s 9p %#x %s", mountTarget, flags, opts)
+		if err := unix.Mount("localhost", mountTarget, "9p", flags, opts); err != nil {
+			return nil, fmt.Errorf("9p mount %v", err)
+		}
 	}
 	verbose("mount done")
 

@@ -6,15 +6,17 @@ require (
 	github.com/gliderlabs/ssh v0.3.3
 	github.com/hugelgupf/p9 v0.1.1-0.20210528120703-cc05b77b314b
 	github.com/kevinburke/ssh_config v1.1.0
-	github.com/u-root/u-root v0.11.0
-	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3
-	golang.org/x/sys v0.6.0
+	github.com/u-root/u-root v0.9.0
+	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
+	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
 )
 
 require (
 	github.com/brutella/dnssd v1.2.4
 	github.com/creack/pty v1.1.15
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/jacobsa/fuse v0.0.0-20221016084658-a4cd154343d8
+	github.com/jacobsa/syncutil v0.0.0-20180201203307-228ac8e5a6c3
 	github.com/mdlayher/vsock v1.1.1
 	github.com/pramonow/go-grpc-server-streaming-example v0.0.0-20221124093400-1cdc9a9cd5f7
 	github.com/shirou/gopsutil v3.21.11+incompatible
@@ -48,3 +50,4 @@ require (
 	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/genproto v0.0.0-20230320184635-7606e756e683 // indirect
 )
+

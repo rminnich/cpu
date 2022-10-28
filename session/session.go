@@ -16,6 +16,8 @@ import (
 	"path/filepath"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hugelgupf/p9/p9"
+	"github.com/jacobsa/fuse"
 	"github.com/u-root/cpu/mount"
 	"github.com/u-root/u-root/pkg/termios"
 	"golang.org/x/sys/unix"
@@ -45,6 +47,15 @@ type Session struct {
 	cmd    string
 	args   []string
 	tmpMnt string
+
+	// FUSE file system
+	// FUSE for now is only implemented for Linux, but it can work
+	// on OSX and such, so ... here it is.
+	fs   fuse.Server
+	mfs  *fuse.MountedFileSystem
+	cl   *p9.Client
+	root p9.File
+	cfs  *P9FS
 }
 
 var (
