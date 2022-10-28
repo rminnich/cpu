@@ -89,17 +89,27 @@ func (s *Session) Namespace() (error, error) {
 		user = "nouser"
 	}
 
-	// The debug= option is here so you can see how to temporarily set it if needed.
-	// It generates copious output so use it sparingly.
-	// A useful compromise value is 5.
-	opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, s.msize)
-	if len(s.mopts) > 0 {
-		opts += "," + s.mopts
-	}
+	// test value for trying out FUSE to 9p
+	// This has an advantage that FUSE has good integration with
+	// the kernel page cache, and, further, we can implement
+	// readahead in cpud.
 	mountTarget := filepath.Join(s.tmpMnt, "cpu")
-	verbose("mount 127.0.0.1 on %s 9p %#x %s", mountTarget, flags, opts)
-	if err := unix.Mount("localhost", mountTarget, "9p", flags, opts); err != nil {
-		return nil, fmt.Errorf("9p mount %v", err)
+	if os.Getenv("CPUD_FUSE") != "" {
+		v("CPUD: using FUSE to 9P gateway")
+		return nil, fmt.Errorf("Not yet!")
+	} else {
+		v("CPUD: using 9P")
+		// The debug= option is here so you can see how to temporarily set it if needed.
+		// It generates copious output so use it sparingly.
+		// A useful compromise value is 5.
+		opts := fmt.Sprintf("version=9p2000.L,trans=fd,rfdno=%d,wfdno=%d,uname=%v,debug=0,msize=%d", fd, fd, user, s.msize)
+		if len(s.mopts) > 0 {
+			opts += "," + s.mopts
+		}
+		v("CPUD: mount 127.0.0.1 on %s 9p %#x %s", mountTarget, flags, opts)
+		if err := unix.Mount("localhost", mountTarget, "9p", flags, opts); err != nil {
+			return nil, fmt.Errorf("9p mount %v", err)
+		}
 	}
 	verbose("mount done")
 
