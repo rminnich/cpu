@@ -10,8 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hugelgupf/p9/p9"
 	"golang.org/x/sys/unix"
 )
 
@@ -96,9 +98,32 @@ func (s *Session) Namespace() (error, error) {
 	mountTarget := filepath.Join(s.tmpMnt, "cpu")
 	if os.Getenv("CPUD_FUSE") != "" {
 		v("CPUD: using FUSE to 9P gateway")
+		// When we get here, the FD has been verified.
+		// The 9p version and attach need to run.
+		cl, err := p9.NewClient(cf)
+		if err != nil {
+			return nil, err
+		}
+		root, err := cl.Attach("/")
+		if err != nil {
+			return nil, err
+		}
+
+		s.cl = cl
+		s.root = root
+
+		fs, err := NewP9FS(cl, 5*time.Second, 5*time.Second)
+		if err != nil {
+			return nil, err
+		}
+
 		return nil, fmt.Errorf("Not yet!")
+		s.fs = fs
 	} else {
 		v("CPUD: using 9P")
+		fd := cf.Fd()
+		v("CPUD:fd is %v", fd)
+
 		// The debug= option is here so you can see how to temporarily set it if needed.
 		// It generates copious output so use it sparingly.
 		// A useful compromise value is 5.
