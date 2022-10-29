@@ -111,12 +111,13 @@ func (s *Session) Namespace() (error, error) {
 		s.cl = cl
 		s.root = root
 
-		fs, err := NewP9FS(cl, 5*time.Second, 5*time.Second)
+		fs, cfs, err := NewP9FS(cl, 5*time.Second, 5*time.Second)
 		if err != nil {
 			return nil, err
 		}
 
 		s.fs = fs
+		s.cfs = cfs
 		// This will need to move to the kernel-independent part at some point.
 		c := &fuse.MountConfig{
 			ErrorLogger: log.Default(),
@@ -131,6 +132,8 @@ func (s *Session) Namespace() (error, error) {
 			return nil, err
 		}
 		s.mfs = mfs
+		// annoying but clean up later.
+		s.cfs.inMap[1] = root
 	} else {
 		v("CPUD: using 9P")
 		// the kernel takes over the socket after the Mount.

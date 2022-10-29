@@ -55,6 +55,7 @@ type Session struct {
 	mfs  *fuse.MountedFileSystem
 	cl   *p9.Client
 	root p9.File
+	cfs  *P9FS
 }
 
 var (

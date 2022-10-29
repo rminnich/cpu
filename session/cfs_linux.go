@@ -39,15 +39,16 @@ import (
 //
 //   - Nothing else is marked cacheable. (In particular, the attributes
 //     returned by LookUpInode are not cacheable.)
-func NewP9FS(cl *p9.Client, lookupEntryTimeout time.Duration, getattrTimeout time.Duration) (fuse.Server, error) {
+func NewP9FS(cl *p9.Client, lookupEntryTimeout time.Duration, getattrTimeout time.Duration) (fuse.Server, *P9FS, error) {
 	cfs := &P9FS{
 		cl:                 cl,
 		lookupEntryTimeout: lookupEntryTimeout,
 		getattrTimeout:     getattrTimeout,
 		mtime:              time.Now(),
+		inMap:              make(map[fuseops.InodeID]p9.File),
 	}
 
-	return fuseutil.NewFileSystemServer(cfs), nil
+	return fuseutil.NewFileSystemServer(cfs), cfs, nil
 }
 
 type P9FS struct {
@@ -68,6 +69,7 @@ type P9FS struct {
 	// GUARDED_BY(mu)
 	keepPageCache bool
 	mtime         time.Time
+	inMap         map[fuseops.InodeID]p9.File
 }
 
 var _ fuseutil.FileSystem = &P9FS{}
@@ -136,8 +138,28 @@ func (fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAttr
 	defer fs.mu.Unlock()
 
 	// Figure out which inode the request is for.
-	var attrs fuseops.InodeAttributes
+	in := op.Inode
+	cl, ok := fs.inMap[in]
+	if !ok {
+		return os.ErrNotExist
+	}
 
+	_, _, _, err := cl.GetAttr(p9.AttrMaskAll)
+	if err != nil {
+		return err
+	}
+
+	attrs := fuseops.InodeAttributes{
+		Size:   0,
+		Nlink:  0,
+		Mode:   0666,
+		Atime:  time.Now(),
+		Mtime:  time.Now(),
+		Ctime:  time.Now(),
+		Crtime: time.Now(),
+		Uid:    0,
+		Gid:    0,
+	}
 	op.Attributes = attrs
 	op.AttributesExpiration = time.Now().Add(fs.getattrTimeout)
 
