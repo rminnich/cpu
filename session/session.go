@@ -52,6 +52,7 @@ type Session struct {
 	// FUSE for now is only implemented for Linux, but it can work
 	// on OSX and such, so ... here it is.
 	fs   fuse.Server
+	mfs  *fuse.MountedFileSystem
 	cl   *p9.Client
 	root p9.File
 }

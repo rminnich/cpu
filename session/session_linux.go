@@ -6,6 +6,7 @@ package session
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hugelgupf/p9/p9"
+	"github.com/jacobsa/fuse"
 	"golang.org/x/sys/unix"
 )
 
@@ -75,9 +77,6 @@ func (s *Session) Namespace() (error, error) {
 	// improvements welcome.
 	copy([]byte(nonce), make([]byte, len(nonce)))
 
-	// the kernel takes over the socket after the Mount.
-	defer so.Close()
-	flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
 	cf, err := so.(*net.TCPConn).File()
 	if err != nil {
 		return nil, fmt.Errorf("CPUD:Cannot get fd for %v: %v", so, err)
@@ -117,10 +116,27 @@ func (s *Session) Namespace() (error, error) {
 			return nil, err
 		}
 
-		return nil, fmt.Errorf("Not yet!")
 		s.fs = fs
+		// This will need to move to the kernel-independent part at some point.
+		c := &fuse.MountConfig{
+			ErrorLogger: log.Default(),
+			DebugLogger: log.Default(),
+			// This must be set, else you will get
+			// fuse: Bad value for 'source'
+			// and the mount will fail
+			FSName: "cpud",
+		}
+		mfs, err := fuse.Mount(mountTarget, fs, c)
+		if err != nil {
+			return nil, err
+		}
+		s.mfs = mfs
 	} else {
 		v("CPUD: using 9P")
+		// the kernel takes over the socket after the Mount.
+		defer so.Close()
+
+		flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
 		fd := cf.Fd()
 		v("CPUD:fd is %v", fd)
 
