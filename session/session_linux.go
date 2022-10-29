@@ -133,7 +133,11 @@ func (s *Session) Namespace() (error, error) {
 		}
 		s.mfs = mfs
 		// annoying but clean up later.
-		s.cfs.inMap[1] = root
+		s.cfs.inMap[1] = entry{
+			fid:     root,
+			root:    true,
+			inumber: 1,
+		}
 	} else {
 		v("CPUD: using 9P")
 		// the kernel takes over the socket after the Mount.

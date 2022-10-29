@@ -18,6 +18,8 @@ import (
 	"context"
 	"crypto/rand"
 	"io"
+	"io/fs"
+	"log"
 	"os"
 	"time"
 
@@ -45,10 +47,17 @@ func NewP9FS(cl *p9.Client, lookupEntryTimeout time.Duration, getattrTimeout tim
 		lookupEntryTimeout: lookupEntryTimeout,
 		getattrTimeout:     getattrTimeout,
 		mtime:              time.Now(),
-		inMap:              make(map[fuseops.InodeID]p9.File),
+		inMap:              make(map[fuseops.InodeID]entry),
 	}
 
 	return fuseutil.NewFileSystemServer(cfs), cfs, nil
+}
+
+type entry struct {
+	fid     p9.File
+	root    bool
+	QID     p9.QID
+	inumber uint64
 }
 
 type P9FS struct {
@@ -69,7 +78,7 @@ type P9FS struct {
 	// GUARDED_BY(mu)
 	keepPageCache bool
 	mtime         time.Time
-	inMap         map[fuseops.InodeID]p9.File
+	inMap         map[fuseops.InodeID]entry
 }
 
 var _ fuseutil.FileSystem = &P9FS{}
@@ -133,36 +142,47 @@ func (fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) erro
 }
 
 // LOCKS_EXCLUDED(fs.mu)
-func (fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAttributesOp) error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAttributesOp) error {
+	p9fs.mu.Lock()
+	defer p9fs.mu.Unlock()
 
 	// Figure out which inode the request is for.
 	in := op.Inode
-	cl, ok := fs.inMap[in]
+	cl, ok := p9fs.inMap[in]
 	if !ok {
+		panic("NO file")
 		return os.ErrNotExist
 	}
 
-	_, _, _, err := cl.GetAttr(p9.AttrMaskAll)
+	v("GetInodeAttributes for in %d cl %v", in, cl)
+	q, _, a, err := cl.fid.GetAttr(p9.AttrMaskAll)
 	if err != nil {
+		panic("bad getattr")
+		v("cl.GetAttr: %v", err)
 		return err
 	}
 
+	var dir fs.FileMode
+	if q.Type&p9.TypeDir == p9.TypeDir {
+		dir = os.ModeDir
+	}
 	attrs := fuseops.InodeAttributes{
-		Size:   0,
-		Nlink:  0,
-		Mode:   0666,
+		Size:   a.Size,
+		Nlink:  uint32(a.NLink),
+		Mode:   dir | fs.FileMode(a.Mode),
 		Atime:  time.Now(),
 		Mtime:  time.Now(),
 		Ctime:  time.Now(),
 		Crtime: time.Now(),
-		Uid:    0,
-		Gid:    0,
+		Uid:    uint32(a.UID),
+		Gid:    uint32(a.GID),
 	}
 	op.Attributes = attrs
-	op.AttributesExpiration = time.Now().Add(fs.getattrTimeout)
-
+	op.AttributesExpiration = time.Now().Add(p9fs.getattrTimeout)
+	v("GetInodeAttributes: OK")
+	// NOTE: if you get an EIO from this, it's usually b/c the ModeDir bit
+	// is wrong.
+	log.Printf("attr %v", attrs)
 	return nil
 }
 
