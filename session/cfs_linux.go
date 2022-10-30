@@ -58,6 +58,7 @@ type entry struct {
 	root    bool
 	QID     p9.QID
 	inumber uint64
+	unit    int
 }
 
 type P9FS struct {
@@ -187,6 +188,25 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 }
 
 func (fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
+	// opendir is somewhat pointless, it could vanish the next instant.
+	// Consider always returning nil and only opening when you get
+	// a readdir request?
+	in := op.Inode
+	cl, ok := fs.inMap[in]
+	if !ok {
+		panic("NO file")
+		return os.ErrNotExist
+	}
+
+	q, unit, err := cl.fid.Open(p9.ReadOnly)
+	if err != nil {
+		return err
+	}
+	cl.QID = q
+	cl.unit = int(unit)
+
+	op.Handle = fuseops.HandleID(q.Path)
+
 	return nil
 }
 
