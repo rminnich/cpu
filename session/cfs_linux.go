@@ -422,9 +422,19 @@ func (fs *P9FS) ForgetInode(ctx context.Context, op *fuseops.ForgetInodeOp) erro
 	return nil
 }
 
+// BatchForget implements BatchForget. Error trees/chains will wait for Go 1.20
 func (fs *P9FS) BatchForget(ctx context.Context, op *fuseops.BatchForgetOp) error {
-	panic("func (fs *P9FS) BatchForget(ctx context.Context, op *fuseops.BatchForgetOp) error {")
-	return fuse.ENOSYS
+	for i, e := range op.Entries {
+		fe := &fuseops.ForgetInodeOp{
+			Inode:     e.Inode,
+			N:         e.N,
+			OpContext: op.OpContext,
+		}
+		if err := fs.ForgetInode(ctx, fe); err != nil {
+			log.Printf("batchforget, entry %d (%v): %v", i, e, err)
+		}
+	}
+	return nil
 }
 
 func (fs *P9FS) MkDir(ctx context.Context, op *fuseops.MkDirOp) error {
