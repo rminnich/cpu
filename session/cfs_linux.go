@@ -16,8 +16,6 @@ package session
 
 import (
 	"context"
-	"crypto/rand"
-	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -51,6 +49,7 @@ func NewP9FS(cl *p9.Client, root p9.File, lookupEntryTimeout time.Duration, geta
 		inMap:              make(map[fuseops.InodeID]entry),
 		openfile:           make(map[fuseops.HandleID]openfile),
 		ino:                1,
+		keepPageCache:      true,
 	}
 
 	cfs.inMap[1] = entry{
@@ -170,13 +169,11 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 
 	qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
 	if err != nil {
-		log.Panicf("walkgetattr: %v walking from %v in %d", err, cl, p)
+		//log.Panicf("walkgetattr: %v walking from %v in %d", err, cl, p)
 		return err
 	}
 
 	q := qids[0]
-	log.Printf("lookupinode parent %d q.Path %d", p, q.Path)
-	log.Printf("lookupinode parent %T q.Path %T", p, q.Path)
 	ino := atomic.AddUint64(&p9fs.ino, 1)
 	i, ok := p9fs.inMap[fuseops.InodeID(ino)]
 	if ok {
@@ -273,8 +270,6 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 	v("GetInodeAttributes for in %d cl %v", in, cl)
 	q, _, a, err := cl.fid.GetAttr(p9.AttrMaskAll)
 	if err != nil {
-		panic("bad getattr")
-		v("cl.GetAttr: %v", err)
 		return err
 	}
 
@@ -305,9 +300,9 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 
 // OpenDir implements OpenDir. N.B.: need to do a walk and open,
 // else walks from the directory are impossible!
-func (fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
+func (p9fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
 	in := op.Inode
-	cl, ok := fs.inMap[in]
+	cl, ok := p9fs.inMap[in]
 	if !ok {
 		panic("NO file")
 		return os.ErrNotExist
@@ -318,15 +313,15 @@ func (fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
 		panic("opendir walk")
 		return err
 	}
-	q, unit, err := f.Open(p9.ReadOnly)
+	_, unit, err := f.Open(p9.ReadOnly)
 	if err != nil {
 		panic("opendir open")
 		return err
 	}
+	h := atomic.AddUint64(&p9fs.ino, 1)
+	op.Handle = fuseops.HandleID(h)
 
-	op.Handle = fuseops.HandleID(q.Path)
-
-	fs.openfile[op.Handle] = openfile{
+	p9fs.openfile[op.Handle] = openfile{
 		fid:  f,
 		unit: int(unit),
 	}
@@ -379,18 +374,64 @@ func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 	return nil
 }
 
-func (fs *P9FS) OpenFile(ctx context.Context, op *fuseops.OpenFileOp) error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+// OpenFile implements OpenFile.
+// Again, we take FUSE as authoritative: if it is asking us to open a file, it is because
+// it needs it opened.
+func (p9fs *P9FS) OpenFile(ctx context.Context, op *fuseops.OpenFileOp) error {
+	p9fs.mu.Lock()
+	defer p9fs.mu.Unlock()
 
-	op.KeepPageCache = fs.keepPageCache
+	in := op.Inode
+	cl, ok := p9fs.inMap[in]
+	if !ok {
+		panic("NO file")
+		return os.ErrNotExist
+	}
 
+	// We walk because it is allowed to walk a file fid to another fid.
+	// Were we to open this fid, it would be breaking the rules.
+	_, f, err := cl.fid.Walk([]string{})
+	if err != nil {
+		panic("openfile walk")
+		return err
+	}
+	_, unit, err := f.Open(p9.ReadOnly)
+	if err != nil {
+		panic("openfile open")
+		return err
+	}
+
+	h := atomic.AddUint64(&p9fs.ino, 1)
+	op.Handle = fuseops.HandleID(h)
+
+	p9fs.openfile[op.Handle] = openfile{
+		fid:  f,
+		unit: int(unit),
+	}
+
+	op.KeepPageCache = p9fs.keepPageCache
 	return nil
 }
 
+// ReadFile implements ReadFile
 func (fs *P9FS) ReadFile(ctx context.Context, op *fuseops.ReadFileOp) error {
-	var err error
-	op.BytesRead, err = io.ReadFull(rand.Reader, op.Dst)
+	ha := op.Handle
+	cl, ok := fs.openfile[ha]
+	if !ok {
+		panic("NO open file")
+		return os.ErrNotExist
+	}
+
+	off := op.Offset
+
+	dst := op.Dst
+	if dst == nil {
+		dst = make([]byte, op.Size)
+		op.Data = [][]byte{dst}
+	}
+	amt, err := cl.fid.ReadAt(dst, off)
+	op.BytesRead = amt
+
 	return err
 }
 
@@ -498,13 +539,18 @@ func (fs *P9FS) SyncFile(ctx context.Context, op *fuseops.SyncFileOp) error {
 }
 
 func (fs *P9FS) FlushFile(ctx context.Context, op *fuseops.FlushFileOp) error {
-	panic("func (fs *P9FS) FlushFile(ctx context.Context, op *fuseops.FlushFileOp) error {")
-	return fuse.ENOSYS
+	log.Printf("TODO:func (fs *P9FS) FlushFile(ctx context.Context, op *fuseops.FlushFileOp) error {")
+	return nil
 }
 
 func (fs *P9FS) ReleaseFileHandle(ctx context.Context, op *fuseops.ReleaseFileHandleOp) error {
-	panic("func (fs *P9FS) ReleaseFileHandle(ctx context.Context, op *fuseops.ReleaseFileHandleOp) error {")
-	return fuse.ENOSYS
+	ha := op.Handle
+	cl, ok := fs.openfile[ha]
+	if !ok {
+		return nil
+	}
+	delete(fs.openfile, ha)
+	return cl.fid.Close()
 }
 
 func (fs *P9FS) ReadSymlink(ctx context.Context, op *fuseops.ReadSymlinkOp) error {
