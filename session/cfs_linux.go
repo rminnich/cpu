@@ -21,6 +21,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/hugelgupf/p9/p9"
@@ -41,7 +42,7 @@ import (
 //
 //   - Nothing else is marked cacheable. (In particular, the attributes
 //     returned by LookUpInode are not cacheable.)
-func NewP9FS(cl *p9.Client, lookupEntryTimeout time.Duration, getattrTimeout time.Duration) (fuse.Server, *P9FS, error) {
+func NewP9FS(cl *p9.Client, root p9.File, lookupEntryTimeout time.Duration, getattrTimeout time.Duration) (fuse.Server, *P9FS, error) {
 	cfs := &P9FS{
 		cl:                 cl,
 		lookupEntryTimeout: lookupEntryTimeout,
@@ -49,16 +50,26 @@ func NewP9FS(cl *p9.Client, lookupEntryTimeout time.Duration, getattrTimeout tim
 		mtime:              time.Now(),
 		inMap:              make(map[fuseops.InodeID]entry),
 		openfile:           make(map[fuseops.HandleID]openfile),
+		ino:                1,
 	}
 
+	cfs.inMap[1] = entry{
+		fid:      root,
+		QID:      p9.QID{Path: 1},
+		root:     true,
+		fullPath: "/",
+		refcount: 1,
+	}
 	return fuseutil.NewFileSystemServer(cfs), cfs, nil
 }
 
 type entry struct {
-	fid     p9.File
-	root    bool
-	QID     p9.QID
-	inumber uint64
+	fid      p9.File
+	root     bool
+	QID      p9.QID
+	fullPath string
+	ino      uint64
+	refcount uint64
 }
 
 type openfile struct {
@@ -78,6 +89,8 @@ type P9FS struct {
 	/////////////////////////
 	// Mutable state
 	/////////////////////////
+	// unique inumber for this mount's lifetime.
+	ino uint64
 
 	mu syncutil.InvariantMutex
 
@@ -130,6 +143,18 @@ func (fs *P9FS) StatFS(ctx context.Context, op *fuseops.StatFSOp) error {
 	return nil
 }
 
+// LookupInode looks up an inode from an inode FUSE already looked up.
+// There's a subtle point here: will FUSE ask us to look up an inode it knows about.
+// The answer seems to be no. Therefore, we can dynamically generate an inumber
+// if we get here and not worry that there's an "obsolete" inumber for a previous
+// lookup. E.g., if fuse asks us to lookup /dev, and some time later it asks us
+// again, it's because it told us to forget about it and there's no in-kernel
+// record of it. IOW, we take it as given that the kernel gets it right.
+// This is kind of ok, since the kernel has a much longer lifetime than an
+// instance of this client, which after all is just one cpu session.
+// Hence, we don't use the QID.Path, as it is not unique anyway (unlike Plan 9)
+// but, rather, we dynamically generate a new inumber for each lookup that
+// succeeds.
 // LOCKS_EXCLUDED(fs.mu)
 func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) error {
 	p9fs.mu.Lock()
@@ -145,16 +170,25 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 
 	qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
 	if err != nil {
+		log.Panicf("walkgetattr: %v walking from %v in %d", err, cl, p)
 		return err
 	}
 
 	q := qids[0]
-	// it always replaces what is there.
-	p9fs.inMap[fuseops.InodeID(q.Path)] = entry{
-		fid:     f,
-		root:    false,
-		QID:     q,
-		inumber: q.Path,
+	log.Printf("lookupinode parent %d q.Path %d", p, q.Path)
+	log.Printf("lookupinode parent %T q.Path %T", p, q.Path)
+	ino := atomic.AddUint64(&p9fs.ino, 1)
+	i, ok := p9fs.inMap[fuseops.InodeID(ino)]
+	if ok {
+		log.Panicf("WTF? lookup %v and inumber %d was taken?", f, i)
+	}
+	log.Printf("CPUD: at inmap: %v", i)
+
+	p9fs.inMap[fuseops.InodeID(ino)] = entry{
+		fid:  f,
+		root: false,
+		QID:  q,
+		ino:  ino,
 	}
 	/*
 		Mode             FileMode
@@ -176,19 +210,24 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 		Gen              uint64
 		DataVersion      uint64
 	*/
+	var dir fs.FileMode
+	if q.Type&p9.TypeDir == p9.TypeDir {
+		dir = os.ModeDir
+	}
+	//	var dt = ptype(q)
 	attrs := fuseops.InodeAttributes{
 		Size:  a.Size,
 		Nlink: uint32(a.NLink),
-		Mode:  fs.FileMode(a.Mode),
+		Mode:  dir | fs.FileMode(a.Mode),
 		Atime: time.Unix(int64(a.ATimeSeconds), int64(a.ATimeNanoSeconds)),
 		Mtime: time.Unix(int64(a.MTimeSeconds), int64(a.MTimeNanoSeconds)),
 		Ctime: time.Unix(int64(a.CTimeSeconds), int64(a.CTimeNanoSeconds)),
 		Uid:   uint32(a.UID),
 		Gid:   uint32(a.GID),
 	}
-
+	v("attrs %#x", attrs)
 	// Fill in the response.
-	op.Entry.Child = fuseops.InodeID(q.Path)
+	op.Entry.Child = fuseops.InodeID(ino)
 	op.Entry.Attributes = attrs
 	op.Entry.EntryExpiration = time.Now().Add(p9fs.lookupEntryTimeout)
 
@@ -243,6 +282,7 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 	if q.Type&p9.TypeDir == p9.TypeDir {
 		dir = os.ModeDir
 	}
+	//	var dt = ptype(q)
 	attrs := fuseops.InodeAttributes{
 		Size:   a.Size,
 		Nlink:  uint32(a.NLink),
@@ -259,14 +299,13 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 	v("GetInodeAttributes: OK")
 	// NOTE: if you get an EIO from this, it's usually b/c the ModeDir bit
 	// is wrong.
-	log.Printf("attr %v", attrs)
+	v("attr %v", attrs)
 	return nil
 }
 
+// OpenDir implements OpenDir. N.B.: need to do a walk and open,
+// else walks from the directory are impossible!
 func (fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
-	// opendir is somewhat pointless, it could vanish the next instant.
-	// Consider always returning nil and only opening when you get
-	// a readdir request?
 	in := op.Inode
 	cl, ok := fs.inMap[in]
 	if !ok {
@@ -274,16 +313,21 @@ func (fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
 		return os.ErrNotExist
 	}
 
-	q, unit, err := cl.fid.Open(p9.ReadOnly)
+	_, f, err := cl.fid.Walk([]string{})
 	if err != nil {
+		panic("opendir walk")
 		return err
 	}
-	cl.QID = q
+	q, unit, err := f.Open(p9.ReadOnly)
+	if err != nil {
+		panic("opendir open")
+		return err
+	}
 
 	op.Handle = fuseops.HandleID(q.Path)
 
 	fs.openfile[op.Handle] = openfile{
-		fid:  cl.fid,
+		fid:  f,
 		unit: int(unit),
 	}
 
@@ -358,92 +402,131 @@ func (fs *P9FS) ReadFile(ctx context.Context, op *fuseops.ReadFileOp) error {
 // about, ensuring your struct will continue to implement FileSystem even as
 // new methods are added.
 func (fs *P9FS) SetInodeAttributes(ctx context.Context, op *fuseops.SetInodeAttributesOp) error {
+	panic("func (fs *P9FS) SetInodeAttributes(ctx context.Context, op *fuseops.SetInodeAttributesOp) error {")
 	return fuse.ENOSYS
 }
 
+// Forget: do we close it too?
 func (fs *P9FS) ForgetInode(ctx context.Context, op *fuseops.ForgetInodeOp) error {
-	return fuse.ENOSYS
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	in := op.Inode
+	f, ok := fs.inMap[in]
+	if !ok {
+		return os.ErrNotExist
+	}
+	f.refcount -= op.N
+	if f.refcount < 1 {
+		delete(fs.inMap, in)
+	}
+	return nil
 }
 
 func (fs *P9FS) BatchForget(ctx context.Context, op *fuseops.BatchForgetOp) error {
+	panic("func (fs *P9FS) BatchForget(ctx context.Context, op *fuseops.BatchForgetOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) MkDir(ctx context.Context, op *fuseops.MkDirOp) error {
+	panic("func (fs *P9FS) MkDir(ctx context.Context, op *fuseops.MkDirOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) MkNode(ctx context.Context, op *fuseops.MkNodeOp) error {
+	panic("func (fs *P9FS) MkNode(ctx context.Context, op *fuseops.MkNodeOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) CreateFile(ctx context.Context, op *fuseops.CreateFileOp) error {
+	panic("func (fs *P9FS) CreateFile(ctx context.Context, op *fuseops.CreateFileOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) CreateSymlink(ctx context.Context, op *fuseops.CreateSymlinkOp) error {
+	panic("func (fs *P9FS) CreateSymlink(ctx context.Context, op *fuseops.CreateSymlinkOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) CreateLink(ctx context.Context, op *fuseops.CreateLinkOp) error {
+	panic("func (fs *P9FS) CreateLink(ctx context.Context, op *fuseops.CreateLinkOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) Rename(ctx context.Context, op *fuseops.RenameOp) error {
+	panic("func (fs *P9FS) Rename(ctx context.Context, op *fuseops.RenameOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) RmDir(ctx context.Context, op *fuseops.RmDirOp) error {
+	panic("func (fs *P9FS) RmDir(ctx context.Context, op *fuseops.RmDirOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) Unlink(ctx context.Context, op *fuseops.UnlinkOp) error {
+	panic("func (fs *P9FS) Unlink(ctx context.Context, op *fuseops.UnlinkOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) ReleaseDirHandle(ctx context.Context, op *fuseops.ReleaseDirHandleOp) error {
-	return fuse.ENOSYS
+	ha := op.Handle
+	cl, ok := fs.openfile[ha]
+	if !ok {
+		return nil
+	}
+	delete(fs.openfile, ha)
+	return cl.fid.Close()
 }
 
 func (fs *P9FS) WriteFile(ctx context.Context, op *fuseops.WriteFileOp) error {
+	panic("func (fs *P9FS) WriteFile(ctx context.Context, op *fuseops.WriteFileOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) SyncFile(ctx context.Context, op *fuseops.SyncFileOp) error {
+	panic("func (fs *P9FS) SyncFile(ctx context.Context, op *fuseops.SyncFileOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) FlushFile(ctx context.Context, op *fuseops.FlushFileOp) error {
+	panic("func (fs *P9FS) FlushFile(ctx context.Context, op *fuseops.FlushFileOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) ReleaseFileHandle(ctx context.Context, op *fuseops.ReleaseFileHandleOp) error {
+	panic("func (fs *P9FS) ReleaseFileHandle(ctx context.Context, op *fuseops.ReleaseFileHandleOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) ReadSymlink(ctx context.Context, op *fuseops.ReadSymlinkOp) error {
+	panic("func (fs *P9FS) ReadSymlink(ctx context.Context, op *fuseops.ReadSymlinkOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) RemoveXattr(ctx context.Context, op *fuseops.RemoveXattrOp) error {
+	panic("func (fs *P9FS) RemoveXattr(ctx context.Context, op *fuseops.RemoveXattrOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) GetXattr(ctx context.Context, op *fuseops.GetXattrOp) error {
-	return fuse.ENOSYS
+	v("FIX func (fs *P9FS) GetXattr(ctx context.Context, op *fuseops.GetXattrOp) error {")
+	return fuse.ENOATTR
 }
 
 func (fs *P9FS) ListXattr(ctx context.Context, op *fuseops.ListXattrOp) error {
+	panic("func (fs *P9FS) ListXattr(ctx context.Context, op *fuseops.ListXattrOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) SetXattr(ctx context.Context, op *fuseops.SetXattrOp) error {
+	panic("func (fs *P9FS) SetXattr(ctx context.Context, op *fuseops.SetXattrOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) Fallocate(ctx context.Context, op *fuseops.FallocateOp) error {
+	panic("func (fs *P9FS) Fallocate(ctx context.Context, op *fuseops.FallocateOp) error {")
 	return fuse.ENOSYS
 }
 
 func (fs *P9FS) Destroy() {
+	panic("func (fs *P9FS) Destroy() {")
 }

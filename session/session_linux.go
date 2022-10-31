@@ -111,7 +111,7 @@ func (s *Session) Namespace() (error, error) {
 		s.cl = cl
 		s.root = root
 
-		fs, cfs, err := NewP9FS(cl, 5*time.Second, 5*time.Second)
+		fs, cfs, err := NewP9FS(cl, root, 5*time.Second, 5*time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -134,9 +134,9 @@ func (s *Session) Namespace() (error, error) {
 		s.mfs = mfs
 		// annoying but clean up later.
 		s.cfs.inMap[1] = entry{
-			fid:     root,
-			root:    true,
-			inumber: 1,
+			fid:  root,
+			root: true,
+			ino:  1,
 		}
 	} else {
 		v("CPUD: using 9P")
