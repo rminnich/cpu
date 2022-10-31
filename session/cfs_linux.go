@@ -48,6 +48,7 @@ func NewP9FS(cl *p9.Client, lookupEntryTimeout time.Duration, getattrTimeout tim
 		getattrTimeout:     getattrTimeout,
 		mtime:              time.Now(),
 		inMap:              make(map[fuseops.InodeID]entry),
+		openfile:           make(map[fuseops.HandleID]openfile),
 	}
 
 	return fuseutil.NewFileSystemServer(cfs), cfs, nil
@@ -58,7 +59,11 @@ type entry struct {
 	root    bool
 	QID     p9.QID
 	inumber uint64
-	unit    int
+}
+
+type openfile struct {
+	fid  p9.File
+	unit int
 }
 
 type P9FS struct {
@@ -80,6 +85,7 @@ type P9FS struct {
 	keepPageCache bool
 	mtime         time.Time
 	inMap         map[fuseops.InodeID]entry
+	openfile      map[fuseops.HandleID]openfile
 }
 
 var _ fuseutil.FileSystem = &P9FS{}
@@ -125,21 +131,91 @@ func (fs *P9FS) StatFS(ctx context.Context, op *fuseops.StatFSOp) error {
 }
 
 // LOCKS_EXCLUDED(fs.mu)
-func (fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) error {
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
+func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) error {
+	p9fs.mu.Lock()
+	defer p9fs.mu.Unlock()
 
 	// Find the ID and attributes.
-	var id fuseops.InodeID
-	var attrs fuseops.InodeAttributes
+	p := op.Parent
+	cl, ok := p9fs.inMap[p]
+	if !ok {
+		panic("NO parent")
+		return os.ErrNotExist
+	}
 
-	return fuse.ENOENT
+	qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
+	if err != nil {
+		return err
+	}
+
+	q := qids[0]
+	// it always replaces what is there.
+	p9fs.inMap[fuseops.InodeID(q.Path)] = entry{
+		fid:     f,
+		root:    false,
+		QID:     q,
+		inumber: q.Path,
+	}
+	/*
+		Mode             FileMode
+		UID              UID
+		GID              GID
+		NLink            NLink
+		RDev             Dev
+		Size             uint64
+		BlockSize        uint64
+		Blocks           uint64
+		ATimeSeconds     uint64
+		ATimeNanoSeconds uint64
+		MTimeSeconds     uint64
+		MTimeNanoSeconds uint64
+		CTimeSeconds     uint64
+		CTimeNanoSeconds uint64
+		BTimeSeconds     uint64
+		BTimeNanoSeconds uint64
+		Gen              uint64
+		DataVersion      uint64
+	*/
+	attrs := fuseops.InodeAttributes{
+		Size:  a.Size,
+		Nlink: uint32(a.NLink),
+		Mode:  fs.FileMode(a.Mode),
+		Atime: time.Unix(int64(a.ATimeSeconds), int64(a.ATimeNanoSeconds)),
+		Mtime: time.Unix(int64(a.MTimeSeconds), int64(a.MTimeNanoSeconds)),
+		Ctime: time.Unix(int64(a.CTimeSeconds), int64(a.CTimeNanoSeconds)),
+		Uid:   uint32(a.UID),
+		Gid:   uint32(a.GID),
+	}
+
 	// Fill in the response.
-	op.Entry.Child = id
+	op.Entry.Child = fuseops.InodeID(q.Path)
 	op.Entry.Attributes = attrs
-	op.Entry.EntryExpiration = time.Now().Add(fs.lookupEntryTimeout)
+	op.Entry.EntryExpiration = time.Now().Add(p9fs.lookupEntryTimeout)
 
 	return nil
+}
+
+func ptype(q p9.QID) fuseutil.DirentType {
+	/*	DT_Unknown   DirentType = 0
+		DT_Socket    DirentType = syscall.DT_SOCK
+		DT_Link      DirentType = syscall.DT_LNK
+		DT_File      DirentType = syscall.DT_REG
+		DT_Block     DirentType = syscall.DT_BLK
+		DT_Directory DirentType = syscall.DT_DIR
+		DT_Char      DirentType = syscall.DT_CHR
+		DT_FIFO      DirentType = syscall.DT_FIFO
+	*/
+	switch {
+	case q.Type&p9.TypeDir == p9.TypeDir:
+		return fuseutil.DT_Directory
+		//	case q.Type.IsSocket(), q.Type.IsNamedPipe(), q.Type.IsCharacterDevice():
+		// Best approximation.
+		//		return fuseutil.DT_Socket
+		//	case q.Type.IsSymlink():
+		//		return fuseutil.DT_Link
+	default:
+		return fuseutil.DT_File
+	}
 }
 
 // LOCKS_EXCLUDED(fs.mu)
@@ -203,9 +279,58 @@ func (fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
 		return err
 	}
 	cl.QID = q
-	cl.unit = int(unit)
 
 	op.Handle = fuseops.HandleID(q.Path)
+
+	fs.openfile[op.Handle] = openfile{
+		fid:  cl.fid,
+		unit: int(unit),
+	}
+
+	return nil
+}
+
+func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
+	ha := op.Handle
+	cl, ok := fs.openfile[ha]
+	if !ok {
+		panic("NO open file")
+		return os.ErrNotExist
+	}
+
+	// The offset is determined by the rather arbitrary value from 9p.
+	off := op.Offset
+
+	d, err := cl.fid.Readdir(uint64(off), uint32(cl.unit))
+	if err != nil {
+		panic("NO readdir")
+		return err
+	}
+
+	var tot int
+	for _, ent := range d {
+		// you get QID, Offset, Type, and Name.
+		/*	DT_Unknown   DirentType = 0
+			DT_Socket    DirentType = syscall.DT_SOCK
+			DT_Link      DirentType = syscall.DT_LNK
+			DT_File      DirentType = syscall.DT_REG
+			DT_Block     DirentType = syscall.DT_BLK
+			DT_Directory DirentType = syscall.DT_DIR
+			DT_Char      DirentType = syscall.DT_CHR
+			DT_FIFO      DirentType = syscall.DT_FIFO
+		*/
+		var dt = ptype(ent.QID)
+
+		fe := fuseutil.Dirent{
+			Offset: fuseops.DirOffset(ent.Offset),
+			Inode:  fuseops.InodeID(ent.QID.Path),
+			Name:   ent.Name,
+			Type:   dt,
+		}
+		n := fuseutil.WriteDirent(op.Dst[tot:], fe)
+		tot += n
+	}
+	op.BytesRead = tot
 
 	return nil
 }
@@ -273,10 +398,6 @@ func (fs *P9FS) RmDir(ctx context.Context, op *fuseops.RmDirOp) error {
 }
 
 func (fs *P9FS) Unlink(ctx context.Context, op *fuseops.UnlinkOp) error {
-	return fuse.ENOSYS
-}
-
-func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 	return fuse.ENOSYS
 }
 
