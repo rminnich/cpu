@@ -99,7 +99,7 @@ func (s *Session) Namespace() (error, error) {
 		v("CPUD: using FUSE to 9P gateway")
 		// When we get here, the FD has been verified.
 		// The 9p version and attach need to run.
-		cl, err := p9.NewClient(cf)
+		cl, err := p9.NewClient(cf, p9.WithMessageSize(128*1024))
 		if err != nil {
 			return nil, err
 		}
