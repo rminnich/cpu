@@ -15,6 +15,8 @@
 package client
 
 import (
+	"bytes"
+	"compress/zlib"
 	"io/ioutil"
 	"log"
 	"os"
@@ -140,7 +142,20 @@ func (l *cpu9p) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 
 // Read implements p9.File.ReadAt.
 func (l *cpu9p) ReadAt(p []byte, offset int64) (int, error) {
-	return l.file.ReadAt(p, int64(offset))
+	amt, err := l.file.ReadAt(p, int64(offset))
+
+	if amt < 1 {
+		return amt, err
+	}
+
+	// TODO: if compression is none, just return
+	var b bytes.Buffer
+	w, _ := zlib.NewWriterLevel(&b, zlib.NoCompression)
+	w.Write(p[:amt])
+	w.Close()
+
+	copy(p, b.Bytes())
+	return b.Len(), err
 }
 
 // Write implements p9.File.WriteAt.
