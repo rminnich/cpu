@@ -151,7 +151,7 @@ func (l *cpu9p) ReadAt(p []byte, offset int64) (int, error) {
 
 	// TODO: if compression is none, just return
 	var b bytes.Buffer
-	w, _ := zlib.NewWriterLevel(&b, zlib.NoCompression)
+	w, _ := zlib.NewWriterLevel(&b, zlib.BestCompression) //zlib.NoCompression)
 	w.Write(p)
 	w.Close()
 
