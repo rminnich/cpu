@@ -142,7 +142,6 @@ func (l *cpu9p) Open(mode p9.OpenFlags) (p9.QID, uint32, error) {
 
 // Read implements p9.File.ReadAt.
 func (l *cpu9p) ReadAt(p []byte, offset int64) (int, error) {
-	log.Printf("read %d bytes", len(p))
 	amt, err := l.file.ReadAt(p, int64(offset))
 
 	if amt < 1 {
@@ -155,7 +154,6 @@ func (l *cpu9p) ReadAt(p []byte, offset int64) (int, error) {
 	w.Write(p)
 	w.Close()
 
-	log.Printf("len p %d len bytes %d", len(p), b.Len())
 	amt = copy(p, b.Bytes())
 	return amt, err
 }
