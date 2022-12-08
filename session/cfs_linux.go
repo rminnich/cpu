@@ -15,7 +15,10 @@
 package session
 
 import (
+	"bytes"
+"compress/zlib"
 	"context"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -424,14 +427,28 @@ func (fs *P9FS) ReadFile(ctx context.Context, op *fuseops.ReadFileOp) error {
 
 	off := op.Offset
 
+	b := make([]byte, op.Size)
+	amt, err := cl.fid.ReadAt(b, off)
+	if err != nil {
+		return err
+	}
+	// it comes back compressed.
+
+	r, err := zlib.NewReader(bytes.NewBuffer(b[:amt]))
+	if err != nil {
+		return err
+	}
+	var o bytes.Buffer
+	io.Copy(&o, r)
+	r.Close()
+
 	dst := op.Dst
 	if dst == nil {
-		dst = make([]byte, op.Size)
+		dst = make([]byte, o.Len())
 		op.Data = [][]byte{dst}
 	}
-	amt, err := cl.fid.ReadAt(dst, off)
+	amt = copy(dst, o.Bytes())
 	op.BytesRead = amt
-
 	return err
 }
 
