@@ -17,6 +17,8 @@ package client
 import (
 	"bytes"
 	"compress/zlib"
+	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -27,6 +29,8 @@ import (
 
 	"github.com/hugelgupf/p9/p9"
 )
+
+var FUSE bool
 
 // cpu9p is a p9.Attacher.
 type cpu9p struct {
@@ -234,14 +238,33 @@ func (l *cpu9p) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	//log.Printf("readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
 	for i := int(offset); i < len(fi); i++ {
 		entry := cpu9p{path: filepath.Join(l.path, fi[i].Name())}
-		qid, _, err := entry.info()
+		qid, osfi, err := entry.info()
 		if err != nil {
 			continue
+		}
+		name := fi[i].Name()
+		if FUSE {
+			attr := stat2attr(osfi)
+			type att struct {
+				Name string
+				p9.Attr
+			}
+			a := att{
+				Name: name,
+				Attr: *attr,
+			}
+
+			j, err := json.Marshal(a)
+			if err != nil {
+				name = fmt.Sprintf("%v:%v", name, err)
+			} else {
+				name = string(j)
+			}
 		}
 		dirents = append(dirents, p9.Dirent{
 			QID:    qid,
 			Type:   qid.Type,
-			Name:   fi[i].Name(),
+			Name:   name,
 			Offset: uint64(i + 1),
 		})
 	}

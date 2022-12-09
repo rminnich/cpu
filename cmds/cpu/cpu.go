@@ -186,6 +186,9 @@ func main() {
 			a = []string{"/bin/sh"}
 		}
 	}
+	if _, ok := os.LookupEnv("CPUD_FUSE"); ok {
+		client.FUSE = true
+	}
 	verbose("Running as client, to host %q, args %q", host, a)
 
 	*keyFile = getKeyFile(host, *keyFile)

@@ -15,10 +15,31 @@
 package client
 
 import (
+	"os"
 	"syscall"
 
 	"github.com/hugelgupf/p9/p9"
 )
+
+func stat2attr(fi *os.FileMode) *p9.Attr {
+	stat := fi.Sys().(*syscall.Stat_t)
+	return &p9.Attr{
+		Mode:             p9.FileMode(stat.Mode),
+		UID:              p9.UID(stat.Uid),
+		GID:              p9.GID(stat.Gid),
+		NLink:            p9.NLink(stat.Nlink),
+		RDev:             p9.Dev(stat.Rdev),
+		Size:             uint64(stat.Size),
+		BlockSize:        uint64(stat.Blksize),
+		Blocks:           uint64(stat.Blocks),
+		ATimeSeconds:     uint64(stat.Atim.Sec),
+		ATimeNanoSeconds: uint64(stat.Atim.Nsec),
+		MTimeSeconds:     uint64(stat.Mtim.Sec),
+		MTimeNanoSeconds: uint64(stat.Mtim.Nsec),
+		CTimeSeconds:     uint64(stat.Ctim.Sec),
+		CTimeNanoSeconds: uint64(stat.Ctim.Nsec),
+	}
+}
 
 // GetAttr implements p9.File.GetAttr.
 //
