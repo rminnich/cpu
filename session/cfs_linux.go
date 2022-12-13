@@ -194,7 +194,7 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 
 		return nil
 	}
-
+	v("GetInodeAttributes for %d(%s) cl %v: NO Cache hit", p, cl.fullPath, cl)
 	qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
 	if err != nil {
 		//log.Panicf("walkgetattr: %v walking from %v in %d", err, cl, p)
