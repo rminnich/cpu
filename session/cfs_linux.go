@@ -53,7 +53,7 @@ func NewP9FS(cl *p9.Client, root p9.File, lookupEntryTimeout time.Duration, geta
 		mtime:              time.Now(),
 		inMap:              make(map[fuseops.InodeID]entry),
 		openfile:           make(map[fuseops.HandleID]openfile),
-		direntMap:          make(map[string]dirent),
+		dirents:            make(map[string]*dirent),
 		ino:                1,
 		keepPageCache:      true,
 	}
@@ -83,9 +83,10 @@ type openfile struct {
 }
 
 type dirent struct {
-	Name string
-	p9.Attr
-	attr fuseops.InodeAttributes
+	name   string
+	p9attr p9.Attr
+	attr   fuseops.InodeAttributes
+	stamp  time.Time
 }
 
 type P9FS struct {
@@ -110,6 +111,7 @@ type P9FS struct {
 	mtime         time.Time
 	inMap         map[fuseops.InodeID]entry
 	openfile      map[fuseops.HandleID]openfile
+	dirents       map[string]*dirent
 }
 
 var _ fuseutil.FileSystem = &P9FS{}
@@ -341,9 +343,9 @@ func (p9fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
 	return nil
 }
 
-func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
+func (p9fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 	ha := op.Handle
-	cl, ok := fs.openfile[ha]
+	cl, ok := p9fs.openfile[ha]
 	if !ok {
 		panic("NO open file")
 		return os.ErrNotExist
@@ -360,22 +362,38 @@ func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 
 	var tot int
 	for _, ent := range d {
+		entry := &dirent{
+			name:  ent.Name,
+			stamp: time.Now(),
+		}
+
 		if FUSE {
-			panic("decode json-encoded string")
-		}
-		var a struct {
-			Name string
-			p9.Attr
-		}
+			var a struct {
+				Name string
+				p9.Attr
+			}
 
-		j, err := json.Unmarshal(a
-		if err != nil {
-			name = fmt.Sprintf("%v:%v", name, err)
-		} else {
-			name = string(j)
-		}
+			if err := json.Unmarshal([]byte(ent.Name), &a); err != nil {
+				entry.name = fmt.Sprintf("%v:%v", ent.Name, err)
+			} else {
+				entry.name = a.Name
+				entry.p9attr = a.Attr
+			}
+			entry.attr = fuseops.InodeAttributes{
+				Size:  a.Attr.Size,
+				Nlink: uint32(a.Attr.NLink),
+				Mode:/*dir | */ fs.FileMode(a.Attr.Mode),
+				Atime: time.Unix(int64(a.Attr.ATimeSeconds), int64(a.Attr.ATimeNanoSeconds)),
+				Mtime: time.Unix(int64(a.Attr.MTimeSeconds), int64(a.Attr.MTimeNanoSeconds)),
+				Ctime: time.Unix(int64(a.Attr.CTimeSeconds), int64(a.Attr.CTimeNanoSeconds)),
+				Uid:   uint32(a.Attr.UID),
+				Gid:   uint32(a.Attr.GID),
+			}
 
+			v("attrs %#x", entry.attr)
+		}
 		// you get QID, Offset, Type, and Name.
+
 		/*	DT_Unknown   DirentType = 0
 			DT_Socket    DirentType = syscall.DT_SOCK
 			DT_Link      DirentType = syscall.DT_LNK
@@ -390,11 +408,12 @@ func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 		fe := fuseutil.Dirent{
 			Offset: fuseops.DirOffset(ent.Offset),
 			Inode:  fuseops.InodeID(ent.QID.Path),
-			Name:   ent.Name,
+			Name:   entry.name,
 			Type:   dt,
 		}
 		n := fuseutil.WriteDirent(op.Dst[tot:], fe)
 		tot += n
+		//	var dt = ptype(q)
 	}
 	op.BytesRead = tot
 
