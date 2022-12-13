@@ -230,38 +230,38 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 	}
 
 	i, ok := p9fs.inMap[fuseops.InodeID(ino)]
-	if ok {
-		log.Panicf("WTF? lookup %v and inumber %d was taken?", fid, i)
-	}
-	log.Printf("CPUD: at inmap: %v", i)
+	// it is now possible to have something there as as result of readdir
+	if !ok {
+		log.Printf("CPUD: at inmap: %v", i)
 
-	p9fs.inMap[fuseops.InodeID(ino)] = entry{
-		fid:  fid,
-		fullPath: fp,
-		root: false,
-		QID:  q,
-		ino:  ino,
+		p9fs.inMap[fuseops.InodeID(ino)] = entry{
+			fid:      fid,
+			fullPath: fp,
+			root:     false,
+			QID:      q,
+			ino:      ino,
+		}
+		/*
+			Mode             FileMode
+			UID              UID
+			GID              GID
+			NLink            NLink
+			RDev             Dev
+			Size             uint64
+			BlockSize        uint64
+			Blocks           uint64
+			ATimeSeconds     uint64
+			ATimeNanoSeconds uint64
+			MTimeSeconds     uint64
+			MTimeNanoSeconds uint64
+			CTimeSeconds     uint64
+			CTimeNanoSeconds uint64
+			BTimeSeconds     uint64
+			BTimeNanoSeconds uint64
+			Gen              uint64
+			DataVersion      uint64
+		*/
 	}
-	/*
-		Mode             FileMode
-		UID              UID
-		GID              GID
-		NLink            NLink
-		RDev             Dev
-		Size             uint64
-		BlockSize        uint64
-		Blocks           uint64
-		ATimeSeconds     uint64
-		ATimeNanoSeconds uint64
-		MTimeSeconds     uint64
-		MTimeNanoSeconds uint64
-		CTimeSeconds     uint64
-		CTimeNanoSeconds uint64
-		BTimeSeconds     uint64
-		BTimeNanoSeconds uint64
-		Gen              uint64
-		DataVersion      uint64
-	*/
 
 	return nil
 }
