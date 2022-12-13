@@ -24,6 +24,7 @@ import (
 	"io/fs"
 	"log"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -78,6 +79,7 @@ type entry struct {
 }
 
 type openfile struct {
+	ent  *entry
 	fid  p9.File
 	unit int
 }
@@ -86,6 +88,7 @@ type dirent struct {
 	name   string
 	p9attr p9.Attr
 	attr   fuseops.InodeAttributes
+	ino    uint64
 	stamp  time.Time
 }
 
@@ -179,6 +182,17 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 	if !ok {
 		panic("NO parent")
 		return os.ErrNotExist
+	}
+	fp := filepath.Join(cl.fullPath, op.Name)
+	de, ok := p9fs.dirents[fp]
+
+	if ok {
+		v("GetInodeAttributes for %d(%s) cl %v: Cache hit", p, cl.fullPath, cl)
+		op.Entry.Child = fuseops.InodeID(de.ino)
+		op.Entry.Attributes = de.attr
+		op.Entry.EntryExpiration = time.Now().Add(p9fs.lookupEntryTimeout)
+
+		return nil
 	}
 
 	qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
@@ -281,27 +295,35 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 		return os.ErrNotExist
 	}
 
-	v("GetInodeAttributes for in %d cl %v", in, cl)
-	q, _, a, err := cl.fid.GetAttr(p9.AttrMaskAll)
-	if err != nil {
-		return err
-	}
+	// see if we have it already.
+	de, ok := p9fs.dirents[cl.fullPath]
+	var attrs fuseops.InodeAttributes
+	if ok {
+		v("GetInodeAttributes for %d(%s) cl %v: Cache hit", in, cl.fullPath, cl)
+		attrs = de.attr
+	} else {
+		v("GetInodeAttributes for in %d(%s) cl %v", in, cl.fullPath, cl)
+		q, _, a, err := cl.fid.GetAttr(p9.AttrMaskAll)
+		if err != nil {
+			return err
+		}
 
-	var dir fs.FileMode
-	if q.Type&p9.TypeDir == p9.TypeDir {
-		dir = os.ModeDir
-	}
-	//	var dt = ptype(q)
-	attrs := fuseops.InodeAttributes{
-		Size:   a.Size,
-		Nlink:  uint32(a.NLink),
-		Mode:   dir | fs.FileMode(a.Mode),
-		Atime:  time.Now(),
-		Mtime:  time.Now(),
-		Ctime:  time.Now(),
-		Crtime: time.Now(),
-		Uid:    uint32(a.UID),
-		Gid:    uint32(a.GID),
+		var dir fs.FileMode
+		if q.Type&p9.TypeDir == p9.TypeDir {
+			dir = os.ModeDir
+		}
+		//	var dt = ptype(q)
+		attrs = fuseops.InodeAttributes{
+			Size:   a.Size,
+			Nlink:  uint32(a.NLink),
+			Mode:   dir | fs.FileMode(a.Mode),
+			Atime:  time.Now(),
+			Mtime:  time.Now(),
+			Ctime:  time.Now(),
+			Crtime: time.Now(),
+			Uid:    uint32(a.UID),
+			Gid:    uint32(a.GID),
+		}
 	}
 	op.Attributes = attrs
 	op.AttributesExpiration = time.Now().Add(p9fs.getattrTimeout)
@@ -336,6 +358,7 @@ func (p9fs *P9FS) OpenDir(ctx context.Context, op *fuseops.OpenDirOp) error {
 	op.Handle = fuseops.HandleID(h)
 
 	p9fs.openfile[op.Handle] = openfile{
+		ent:  &cl,
 		fid:  f,
 		unit: int(unit),
 	}
@@ -389,7 +412,10 @@ func (p9fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 				Uid:   uint32(a.Attr.UID),
 				Gid:   uint32(a.Attr.GID),
 			}
-
+			entry.ino = atomic.AddUint64(&p9fs.ino, 1)
+			fp := filepath.Join(cl.ent.fullPath, entry.name)
+			v("Cache %q", fp)
+			p9fs.dirents[fp] = entry
 			v("attrs %#x", entry.attr)
 		}
 		// you get QID, Offset, Type, and Name.
