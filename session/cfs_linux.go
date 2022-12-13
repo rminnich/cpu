@@ -184,33 +184,60 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 		return os.ErrNotExist
 	}
 	fp := filepath.Join(cl.fullPath, op.Name)
+	verbose("LookupInode: %q", fp)
 	de, ok := p9fs.dirents[fp]
 
+	var ino uint64
+	var fid p9.File
+	var q p9.QID
 	if ok {
-		v("GetInodeAttributes for %d(%s) cl %v: Cache hit", p, cl.fullPath, cl)
 		op.Entry.Child = fuseops.InodeID(de.ino)
 		op.Entry.Attributes = de.attr
 		op.Entry.EntryExpiration = time.Now().Add(p9fs.lookupEntryTimeout)
+		verbose("LookUpInode for %d(%s) cl %v Entry %v: Cache hit: %v", p, cl.fullPath, cl, op.Entry, de)
+		ino = de.ino
+	} else {
+		verbose("LookUpInode for %d(%s) cl %v: NO Cache hit", p, cl.fullPath, cl)
+		qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
+		fid = f
+		if err != nil {
+			//log.Panicf("walkgetattr: %v walking from %v in %d", err, cl, p)
+			return err
+		}
 
-		return nil
-	}
-	v("GetInodeAttributes for %d(%s) cl %v: NO Cache hit", p, cl.fullPath, cl)
-	qids, f, _, a, err := cl.fid.WalkGetAttr([]string{op.Name})
-	if err != nil {
-		//log.Panicf("walkgetattr: %v walking from %v in %d", err, cl, p)
-		return err
+		q = qids[0]
+		ino = atomic.AddUint64(&p9fs.ino, 1)
+		var dir fs.FileMode
+		if q.Type&p9.TypeDir == p9.TypeDir {
+			dir = os.ModeDir
+		}
+		//	var dt = ptype(q)
+		attrs := fuseops.InodeAttributes{
+			Size:  a.Size,
+			Nlink: uint32(a.NLink),
+			Mode:  dir | fs.FileMode(a.Mode),
+			Atime: time.Unix(int64(a.ATimeSeconds), int64(a.ATimeNanoSeconds)),
+			Mtime: time.Unix(int64(a.MTimeSeconds), int64(a.MTimeNanoSeconds)),
+			Ctime: time.Unix(int64(a.CTimeSeconds), int64(a.CTimeNanoSeconds)),
+			Uid:   uint32(a.UID),
+			Gid:   uint32(a.GID),
+		}
+		verbose("attrs %#x", attrs)
+		// Fill in the response.
+		op.Entry.Child = fuseops.InodeID(ino)
+		op.Entry.Attributes = attrs
+		op.Entry.EntryExpiration = time.Now().Add(p9fs.lookupEntryTimeout)
 	}
 
-	q := qids[0]
-	ino := atomic.AddUint64(&p9fs.ino, 1)
 	i, ok := p9fs.inMap[fuseops.InodeID(ino)]
 	if ok {
-		log.Panicf("WTF? lookup %v and inumber %d was taken?", f, i)
+		log.Panicf("WTF? lookup %v and inumber %d was taken?", fid, i)
 	}
 	log.Printf("CPUD: at inmap: %v", i)
 
 	p9fs.inMap[fuseops.InodeID(ino)] = entry{
-		fid:  f,
+		fid:  fid,
+		fullPath: fp,
 		root: false,
 		QID:  q,
 		ino:  ino,
@@ -235,26 +262,6 @@ func (p9fs *P9FS) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) er
 		Gen              uint64
 		DataVersion      uint64
 	*/
-	var dir fs.FileMode
-	if q.Type&p9.TypeDir == p9.TypeDir {
-		dir = os.ModeDir
-	}
-	//	var dt = ptype(q)
-	attrs := fuseops.InodeAttributes{
-		Size:  a.Size,
-		Nlink: uint32(a.NLink),
-		Mode:  dir | fs.FileMode(a.Mode),
-		Atime: time.Unix(int64(a.ATimeSeconds), int64(a.ATimeNanoSeconds)),
-		Mtime: time.Unix(int64(a.MTimeSeconds), int64(a.MTimeNanoSeconds)),
-		Ctime: time.Unix(int64(a.CTimeSeconds), int64(a.CTimeNanoSeconds)),
-		Uid:   uint32(a.UID),
-		Gid:   uint32(a.GID),
-	}
-	v("attrs %#x", attrs)
-	// Fill in the response.
-	op.Entry.Child = fuseops.InodeID(ino)
-	op.Entry.Attributes = attrs
-	op.Entry.EntryExpiration = time.Now().Add(p9fs.lookupEntryTimeout)
 
 	return nil
 }
@@ -299,10 +306,10 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 	de, ok := p9fs.dirents[cl.fullPath]
 	var attrs fuseops.InodeAttributes
 	if ok {
-		v("GetInodeAttributes for %d(%s) cl %v: Cache hit", in, cl.fullPath, cl)
+		verbose("GetInodeAttributes for %d(%q) cl %v: Cache hit", in, cl.fullPath, cl)
 		attrs = de.attr
 	} else {
-		v("GetInodeAttributes for in %d(%s) cl %v", in, cl.fullPath, cl)
+		verbose("GetInodeAttributes for in %d(%q) cl %v: No cache hit", in, cl.fullPath, cl)
 		q, _, a, err := cl.fid.GetAttr(p9.AttrMaskAll)
 		if err != nil {
 			return err
@@ -327,10 +334,10 @@ func (p9fs *P9FS) GetInodeAttributes(ctx context.Context, op *fuseops.GetInodeAt
 	}
 	op.Attributes = attrs
 	op.AttributesExpiration = time.Now().Add(p9fs.getattrTimeout)
-	v("GetInodeAttributes: OK")
+	verbose("GetInodeAttributes: OK")
 	// NOTE: if you get an EIO from this, it's usually b/c the ModeDir bit
 	// is wrong.
-	v("attr %v", attrs)
+	verbose("attr %v", attrs)
 	return nil
 }
 
@@ -414,9 +421,9 @@ func (p9fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 			}
 			entry.ino = atomic.AddUint64(&p9fs.ino, 1)
 			fp := filepath.Join(cl.ent.fullPath, entry.name)
-			v("Cache %q", fp)
+			verbose("Cache %q@%d", fp, entry.ino)
 			p9fs.dirents[fp] = entry
-			v("attrs %#x", entry.attr)
+			verbose("attrs %#x", entry.attr)
 		}
 		// you get QID, Offset, Type, and Name.
 
@@ -650,7 +657,7 @@ func (fs *P9FS) RemoveXattr(ctx context.Context, op *fuseops.RemoveXattrOp) erro
 }
 
 func (fs *P9FS) GetXattr(ctx context.Context, op *fuseops.GetXattrOp) error {
-	v("FIX func (fs *P9FS) GetXattr(ctx context.Context, op *fuseops.GetXattrOp) error {")
+	verbose("FIX func (fs *P9FS) GetXattr(ctx context.Context, op *fuseops.GetXattrOp) error {")
 	return fuse.ENOATTR
 }
 

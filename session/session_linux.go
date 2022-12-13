@@ -98,10 +98,11 @@ func (s *Session) Namespace() (error, error) {
 	// readahead in cpud.
 	mountTarget := filepath.Join(s.tmpMnt, "cpu")
 	if os.Getenv("CPUD_FUSE") != "" {
+		v = log.Printf
 		FUSE = true
 	}
 	if FUSE {
-		v("CPUD: using FUSE to 9P gateway")
+		verbose("CPUD: using FUSE to 9P gateway")
 		// When we get here, the FD has been verified.
 		// The 9p version and attach need to run.
 		cl, err := p9.NewClient(cf, p9.WithMessageSize(128*1024))
@@ -144,13 +145,13 @@ func (s *Session) Namespace() (error, error) {
 			ino:  1,
 		}
 	} else {
-		v("CPUD: using 9P")
+		verbose("CPUD: using 9P")
 		// the kernel takes over the socket after the Mount.
 		defer so.Close()
 
 		flags := uintptr(unix.MS_NODEV | unix.MS_NOSUID)
 		fd := cf.Fd()
-		v("CPUD:fd is %v", fd)
+		verbose("CPUD:fd is %v", fd)
 
 		// The debug= option is here so you can see how to temporarily set it if needed.
 		// It generates copious output so use it sparingly.
@@ -159,7 +160,7 @@ func (s *Session) Namespace() (error, error) {
 		if len(s.mopts) > 0 {
 			opts += "," + s.mopts
 		}
-		v("CPUD: mount 127.0.0.1 on %s 9p %#x %s", mountTarget, flags, opts)
+		verbose("CPUD: mount 127.0.0.1 on %s 9p %#x %s", mountTarget, flags, opts)
 		if err := unix.Mount("localhost", mountTarget, "9p", flags, opts); err != nil {
 			return nil, fmt.Errorf("9p mount %v", err)
 		}
