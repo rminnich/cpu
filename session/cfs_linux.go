@@ -16,8 +16,10 @@ package session
 
 import (
 	"bytes"
-"compress/zlib"
+	"compress/zlib"
 	"context"
+	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -51,6 +53,7 @@ func NewP9FS(cl *p9.Client, root p9.File, lookupEntryTimeout time.Duration, geta
 		mtime:              time.Now(),
 		inMap:              make(map[fuseops.InodeID]entry),
 		openfile:           make(map[fuseops.HandleID]openfile),
+		direntMap:          make(map[string]dirent),
 		ino:                1,
 		keepPageCache:      true,
 	}
@@ -77,6 +80,12 @@ type entry struct {
 type openfile struct {
 	fid  p9.File
 	unit int
+}
+
+type dirent struct {
+	Name string
+	p9.Attr
+	attr fuseops.InodeAttributes
 }
 
 type P9FS struct {
@@ -351,6 +360,21 @@ func (fs *P9FS) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) error {
 
 	var tot int
 	for _, ent := range d {
+		if FUSE {
+			panic("decode json-encoded string")
+		}
+		var a struct {
+			Name string
+			p9.Attr
+		}
+
+		j, err := json.Unmarshal(a
+		if err != nil {
+			name = fmt.Sprintf("%v:%v", name, err)
+		} else {
+			name = string(j)
+		}
+
 		// you get QID, Offset, Type, and Name.
 		/*	DT_Unknown   DirentType = 0
 			DT_Socket    DirentType = syscall.DT_SOCK

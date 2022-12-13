@@ -19,6 +19,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+var FUSE bool
+
 // Namespace assembles a NameSpace for this cpud, iff CPU_NONCE
 // is set and len(s.binds) > 0.
 //
@@ -96,6 +98,9 @@ func (s *Session) Namespace() (error, error) {
 	// readahead in cpud.
 	mountTarget := filepath.Join(s.tmpMnt, "cpu")
 	if os.Getenv("CPUD_FUSE") != "" {
+		FUSE = true
+	}
+	if FUSE {
 		v("CPUD: using FUSE to 9P gateway")
 		// When we get here, the FD has been verified.
 		// The 9p version and attach need to run.
