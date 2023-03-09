@@ -12,4 +12,5 @@ path = "src/p9cpud.rs"
 anyhow = "1"
 libp9cpu = { version = "*", path = "../libp9cpu" }
 clap = { version = "4", features = ["derive"] }
+socket2 = { version = "0" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread","process","io-std"] }

@@ -21,7 +21,6 @@ pub struct RpcServer {}
 impl crate::server::P9cpuServerT for RpcServer {
     type Error = RpcServerError;
     async fn serve(&self, addr: Addr) -> Result<(), RpcServerError> {
-        
         let p9cpu_service = rpc::p9cpu_server::P9cpuServer::new(P9cpuService::default());
         let router = Server::builder().add_service(p9cpu_service);
         match addr {
