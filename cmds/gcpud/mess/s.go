@@ -1,13 +1,15 @@
 package main
 
+//go:generate protoc --go_out=. --go_opt=paths=source_relative --go-grpc_out=. --go-grpc_opt=paths=source_relative cpu.proto
+
 import (
-	"fmt"
+	"context"
+	"io"
 	"log"
 	"net"
-	"os/exec"
 	"sync"
 
-	pb "github.com/pramonow/go-grpc-server-streaming-example/src/proto"
+	"pb"
 
 	"google.golang.org/grpc"
 )
@@ -18,52 +20,29 @@ func (s server) FetchResponse(in *pb.Request, srv pb.StreamService_FetchResponse
 
 	log.Printf("fetch response for id : %d", in.Id)
 
-	c := exec.Command("bash")
-	var err error
-	stdin, err := c.StdinPipe()
-	if err != nil {
-		return err
-	}
-	stdout, err := c.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	stderr, err := c.StderrPipe()
-	if err != nil {
-		return err
-	}
-
 	var wg sync.WaitGroup
 	{
 		wg.Add(2)
+		in := &pb.Request{Id: 1}
+		stream, err := client.FetchResponse(context.Background(), in)
+		if err != nil {
+			log.Fatalf("openn stream error %v", err)
+		}
+
+		//ctx := stream.Context()
+		done := make(chan bool)
+
 		go func() {
-			defer wg.Done()
 			for {
-				var b [1]byte
-				if _, err := stdout.Read(b[:]); err != nil {
-					log.Printf("ou error %v", err)
+				resp, err := stream.Recv()
+				if err == io.EOF {
+					done <- true //close(done)
 					return
 				}
-				resp := pb.Response{Result: fmt.Sprintf("%c %v", b[0], err)}
-				if err := srv.Send(&resp); err != nil {
-					log.Printf("send error %v", err)
-					return
+				if err != nil {
+					log.Fatalf("can not receive %v", err)
 				}
-			}
-		}()
-		go func() {
-			defer wg.Done()
-			for {
-				var b [1]byte
-				if _, err := stderr.Read(b[:]); err != nil {
-					log.Printf("ou error %v", err)
-					return
-				}
-				resp := pb.Response{Result: fmt.Sprintf("%c %v", b[0], err)}
-				if err := srv.Send(&resp); err != nil {
-					log.Printf("send error %v", err)
-					return
-				}
+				log.Printf("Resp received: %s", resp.Result)
 			}
 		}()
 	}

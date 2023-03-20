@@ -23,8 +23,10 @@ func main() {
 	}
 
 	// create stream
+	iter := 1
 	client := pb.NewStreamServiceClient(conn)
-	in := &pb.Request{Id: 1}
+	in := &pb.Request{Id: iter}
+	iter++
 	stream, err := client.FetchResponse(context.Background(), in)
 	if err != nil {
 		log.Fatalf("openn stream error %v", err)
@@ -45,6 +47,17 @@ func main() {
 			}
 			log.Printf("Resp received: %s", resp.Result)
 		}
+	}()
+
+	go func() {
+		const sleep = 5 * time.Second
+		if err := time.Sleep(sleep); err != nil {
+			log.Printf("Sleep %v:%v", sleep, err)
+			return
+		}
+		in := &pb.Request{Id: iter, Stdin: "hi"}
+		iter++
+		stream, err := client.FetchResponse(context.Background(), in)
 	}()
 
 	<-done
