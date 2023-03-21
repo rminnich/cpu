@@ -68,7 +68,25 @@ func main() {
 
 	var wg sync.WaitGroup
 	{
-		wg.Add(2)
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				r, err := c.Stdin(ctx, &pb.HelloRequest{})
+				if err != nil {
+					log.Printf("could not greet: %v, %v", r, err)
+					return
+				}
+				s := r.GetMessage()
+				log.Printf("stdin: %q", s)
+				if _, err := stdin.Write([]byte(s)); err != nil {
+					log.Printf("Writing stdin: %v", err)
+					return
+				}
+			}
+		}()
 		go func() {
 			defer wg.Done()
 			for {
@@ -77,7 +95,7 @@ func main() {
 					log.Printf("ou error %v", err)
 					return
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
 				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:])})
 				if err != nil {
@@ -95,7 +113,7 @@ func main() {
 					log.Printf("ou error %v", err)
 					return
 				}
-				ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
 				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:])})
 				if err != nil {
@@ -106,9 +124,6 @@ func main() {
 		}()
 	}
 
-	if _, err := stdin.Write([]byte("date\n")); err != nil {
-		log.Printf("write command: %v", err)
-	}
 	if err := cmd.Run(); err != nil {
 		log.Printf("run: %v", err)
 	}

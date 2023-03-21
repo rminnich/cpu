@@ -25,6 +25,7 @@ package helloworld;
 service Greeter {
   // Sends a greeting
   rpc SayHello (HelloRequest) returns (HelloReply) {}
+  rpc Stdin (HelloRequest) returns (HelloReply) {}
 }
 
 // The request message containing the user's name.
@@ -35,4 +36,5 @@ message HelloRequest {
 // The response message containing the greetings
 message HelloReply {
   string message = 1;
+  string error = 2;
 }
