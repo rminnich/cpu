@@ -4,7 +4,7 @@
 // - protoc             v3.21.12
 // source: cpu.proto
 
-package ___cpu
+package mess
 
 import (
 	context "context"
@@ -20,7 +20,6 @@ const _ = grpc.SupportPackageIsVersion7
 
 const (
 	StreamService_Stdout_FullMethodName = "/protobuf.StreamService/Stdout"
-	StreamService_Stderr_FullMethodName = "/protobuf.StreamService/Stderr"
 )
 
 // StreamServiceClient is the client API for StreamService service.
@@ -28,7 +27,6 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StreamServiceClient interface {
 	Stdout(ctx context.Context, in *Request, opts ...grpc.CallOption) (StreamService_StdoutClient, error)
-	Stderr(ctx context.Context, in *Request, opts ...grpc.CallOption) (StreamService_StderrClient, error)
 }
 
 type streamServiceClient struct {
@@ -71,44 +69,11 @@ func (x *streamServiceStdoutClient) Recv() (*Response, error) {
 	return m, nil
 }
 
-func (c *streamServiceClient) Stderr(ctx context.Context, in *Request, opts ...grpc.CallOption) (StreamService_StderrClient, error) {
-	stream, err := c.cc.NewStream(ctx, &StreamService_ServiceDesc.Streams[1], StreamService_Stderr_FullMethodName, opts...)
-	if err != nil {
-		return nil, err
-	}
-	x := &streamServiceStderrClient{stream}
-	if err := x.ClientStream.SendMsg(in); err != nil {
-		return nil, err
-	}
-	if err := x.ClientStream.CloseSend(); err != nil {
-		return nil, err
-	}
-	return x, nil
-}
-
-type StreamService_StderrClient interface {
-	Recv() (*Response, error)
-	grpc.ClientStream
-}
-
-type streamServiceStderrClient struct {
-	grpc.ClientStream
-}
-
-func (x *streamServiceStderrClient) Recv() (*Response, error) {
-	m := new(Response)
-	if err := x.ClientStream.RecvMsg(m); err != nil {
-		return nil, err
-	}
-	return m, nil
-}
-
 // StreamServiceServer is the server API for StreamService service.
 // All implementations must embed UnimplementedStreamServiceServer
 // for forward compatibility
 type StreamServiceServer interface {
 	Stdout(*Request, StreamService_StdoutServer) error
-	Stderr(*Request, StreamService_StderrServer) error
 	mustEmbedUnimplementedStreamServiceServer()
 }
 
@@ -118,9 +83,6 @@ type UnimplementedStreamServiceServer struct {
 
 func (UnimplementedStreamServiceServer) Stdout(*Request, StreamService_StdoutServer) error {
 	return status.Errorf(codes.Unimplemented, "method Stdout not implemented")
-}
-func (UnimplementedStreamServiceServer) Stderr(*Request, StreamService_StderrServer) error {
-	return status.Errorf(codes.Unimplemented, "method Stderr not implemented")
 }
 func (UnimplementedStreamServiceServer) mustEmbedUnimplementedStreamServiceServer() {}
 
@@ -156,27 +118,6 @@ func (x *streamServiceStdoutServer) Send(m *Response) error {
 	return x.ServerStream.SendMsg(m)
 }
 
-func _StreamService_Stderr_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(Request)
-	if err := stream.RecvMsg(m); err != nil {
-		return err
-	}
-	return srv.(StreamServiceServer).Stderr(m, &streamServiceStderrServer{stream})
-}
-
-type StreamService_StderrServer interface {
-	Send(*Response) error
-	grpc.ServerStream
-}
-
-type streamServiceStderrServer struct {
-	grpc.ServerStream
-}
-
-func (x *streamServiceStderrServer) Send(m *Response) error {
-	return x.ServerStream.SendMsg(m)
-}
-
 // StreamService_ServiceDesc is the grpc.ServiceDesc for StreamService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -188,11 +129,6 @@ var StreamService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "Stdout",
 			Handler:       _StreamService_Stdout_Handler,
-			ServerStreams: true,
-		},
-		{
-			StreamName:    "Stderr",
-			Handler:       _StreamService_Stderr_Handler,
 			ServerStreams: true,
 		},
 	},

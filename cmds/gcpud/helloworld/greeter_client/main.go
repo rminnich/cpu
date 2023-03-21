@@ -90,32 +90,33 @@ func main() {
 		go func() {
 			defer wg.Done()
 			for {
-				var b [1]byte
-				if _, err := stdout.Read(b[:]); err != nil {
+				var b [4096]byte
+				n, err := stdout.Read(b[:])
+				if  err != nil {
 					log.Printf("ou error %v", err)
 					return
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
-				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:])})
+				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:n])})
 				if err != nil {
 					log.Printf("could not greet: %v, %v", r, err)
 					return
 				}
-				log.Printf("Greeting: %s", r.GetMessage())
 			}
 		}()
 		go func() {
 			defer wg.Done()
 			for {
 				var b [1]byte
-				if _, err := stderr.Read(b[:]); err != nil {
+				n, err := stderr.Read(b[:])
+				if  err != nil {
 					log.Printf("ou error %v", err)
 					return
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
-				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:])})
+				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:n])})
 				if err != nil {
 					log.Printf("could not greet: %v, %v", r, err)
 					return

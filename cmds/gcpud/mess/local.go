@@ -1,52 +1,29 @@
 package main
 
 import (
-	"context"
-	"io"
 	"log"
-	"math/rand"
+	"net"
 
-	pb "github.com/pramonow/go-grpc-server-streaming-example/src/proto"
-
-	"time"
+	pb "github.com/u-root/cpu/cmds/gcpud/mess/cpu"
 
 	"google.golang.org/grpc"
 )
 
 func main() {
-	rand.Seed(time.Now().Unix())
-
-	// dail server
-	conn, err := grpc.Dial("localhost:50005", grpc.WithInsecure())
+	// create listiner
+	lis, err := net.Listen("tcp", ":50005")
 	if err != nil {
-		log.Fatalf("can not connect with server %v", err)
+		log.Fatalf("failed to listen: %v", err)
 	}
 
-	// create stream
-	client := pb.NewStreamServiceClient(conn)
-	in := &pb.Request{Id: 1}
-	stream, err := client.FetchResponse(context.Background(), in)
-	if err != nil {
-		log.Fatalf("openn stream error %v", err)
+	// create grpc server
+	s := grpc.NewServer()
+	pb.RegisterStreamServiceServer(s, server{})
+
+	log.Println("start server")
+	// and start...
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
 	}
 
-	//ctx := stream.Context()
-	done := make(chan bool)
-
-	go func() {
-		for {
-			resp, err := stream.Recv()
-			if err == io.EOF {
-				done <- true //close(done)
-				return
-			}
-			if err != nil {
-				log.Fatalf("can not receive %v", err)
-			}
-			log.Printf("Resp received: %s", resp.Result)
-		}
-	}()
-
-	<-done
-	log.Printf("finished")
 }

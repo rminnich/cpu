@@ -8,7 +8,7 @@ require (
 	github.com/kevinburke/ssh_config v1.1.0
 	github.com/u-root/u-root v0.11.0
 	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3
-	golang.org/x/sys v0.5.0
+	golang.org/x/sys v0.6.0
 )
 
 require (
@@ -16,13 +16,17 @@ require (
 	github.com/creack/pty v1.1.15
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/mdlayher/vsock v1.1.1
+	github.com/pramonow/go-grpc-server-streaming-example v0.0.0-20221124093400-1cdc9a9cd5f7
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	golang.org/x/exp v0.0.0-20221002003631-540bb7301a08
+	google.golang.org/grpc v1.53.0
+	google.golang.org/protobuf v1.30.0
 )
 
 require (
 	github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/klauspost/compress v1.10.6 // indirect
 	github.com/klauspost/pgzip v1.2.4 // indirect
@@ -36,8 +40,10 @@ require (
 	github.com/vishvananda/netlink v1.1.1-0.20211118161826-650dca95af54 // indirect
 	github.com/vishvananda/netns v0.0.0-20210104183010-2eb08e3e575f // indirect
 	github.com/yusufpapurcu/wmi v1.2.2 // indirect
-	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
-	golang.org/x/net v0.7.0 // indirect
-	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
-	golang.org/x/tools v0.1.12 // indirect
+	golang.org/x/mod v0.8.0 // indirect
+	golang.org/x/net v0.8.0 // indirect
+	golang.org/x/sync v0.1.0 // indirect
+	golang.org/x/text v0.8.0 // indirect
+	golang.org/x/tools v0.6.0 // indirect
+	google.golang.org/genproto v0.0.0-20230320184635-7606e756e683 // indirect
 )
