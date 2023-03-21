@@ -47,7 +47,7 @@ type server struct {
 // SayHello implements helloworld.GreeterServer
 func (s *server) SayHello(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply, error) {
 	out := in.GetName()
-	fmt.Printf("%s",out)
+	fmt.Printf("%s", out)
 	var r = &pb.HelloReply{}
 	return r, nil
 }
@@ -57,7 +57,7 @@ func (s *server) Stdin(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply
 	var r = &pb.HelloReply{}
 	var data [512]byte
 	n, err := s.r.Read(data[:])
-	r.Message = string(data[:n])
+	r.Message = data[:n]
 	return r, err
 }
 

@@ -92,13 +92,13 @@ func main() {
 			for {
 				var b [4096]byte
 				n, err := stdout.Read(b[:])
-				if  err != nil {
+				if err != nil {
 					log.Printf("ou error %v", err)
 					return
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
-				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:n])})
+				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: b[:n]})
 				if err != nil {
 					log.Printf("could not greet: %v, %v", r, err)
 					return
@@ -110,13 +110,13 @@ func main() {
 			for {
 				var b [1]byte
 				n, err := stderr.Read(b[:])
-				if  err != nil {
+				if err != nil {
 					log.Printf("ou error %v", err)
 					return
 				}
 				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 				defer cancel()
-				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: string(b[:n])})
+				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: b[:n]})
 				if err != nil {
 					log.Printf("could not greet: %v, %v", r, err)
 					return

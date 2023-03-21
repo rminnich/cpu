@@ -30,11 +30,11 @@ service Greeter {
 
 // The request message containing the user's name.
 message HelloRequest {
-  string name = 1;
+  bytes name = 1;
 }
 
 // The response message containing the greetings
 message HelloReply {
-  string message = 1;
-  string error = 2;
+  bytes message = 1;
+  bytes error = 2;
 }
