@@ -34,7 +34,7 @@ import (
 )
 
 var (
-	port = flag.Int("port", 50051, "The server port")
+	addr = flag.String("addr", ":6666", "The server addr")
 )
 
 // server is used to implement helloworld.GreeterServer.
@@ -61,14 +61,33 @@ func (s *server) Stdin(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply
 	return r, err
 }
 
+type fake struct {
+	conn net.Conn
+}
+
+func (f *fake) Accept() (net.Conn, error) {
+	return f.conn, nil
+}
+
+func (*fake) Close() error {
+	return nil
+}
+
+func (f *fake) Addr() net.Addr {
+	return f.conn.RemoteAddr()
+}
+
 func main() {
 	flag.Parse()
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	// Dial the server and then use the socket.
+	// So, in a sense, we change from client to server.
+	conn, err := net.Dial("tcp", *addr)
 	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Fatal(err)
 	}
 	s := grpc.NewServer()
 	pb.RegisterGreeterServer(s, &server{r: os.Stdin})
+	lis := &fake{conn: conn}
 	log.Printf("server listening at %v", lis.Addr())
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
