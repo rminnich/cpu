@@ -22,7 +22,6 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -32,6 +31,7 @@ import (
 	pb "github.com/u-root/cpu/cmds/gcpud/helloworld/helloworld"
 	"github.com/u-root/cpu/session"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 const (
@@ -47,7 +47,7 @@ var (
 	// For the ssh server part
 	hostKeyFile = flag.String("hk", "" /*"/etc/ssh/ssh_host_rsa_key"*/, "file for host key")
 	pubKeyFile  = flag.String("pk", "key.pub", "file for public key")
-	port        = flag.String("sp", "6666", "cpu default port")
+	port        = flag.String("sp", ":6666", "cpu default port")
 
 	debug     = flag.Bool("d", false, "enable debug prints")
 	runAsInit = flag.Bool("init", false, "run as init (Debug only; normal test is if we are pid 1")
@@ -81,7 +81,7 @@ func verbose(f string, a ...interface{}) {
 func main() {
 	flag.Parse()
 
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	lis, err := net.Listen("tcp", *port)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
@@ -90,9 +90,12 @@ func main() {
 		log.Fatalf("accept: %v", err)
 	}
 
-	gc, err := grpc.Dial(*addr, grpc.WithDialer(func(string, time.Duration) (net.Conn, error) {
+	gc, err := grpc.Dial(*addr, grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDialer(func(string, time.Duration) (net.Conn, error) {
 		return conn, nil
 	}))
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	c := pb.NewGreeterClient(gc)
 
