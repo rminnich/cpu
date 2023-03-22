@@ -21,7 +21,10 @@ func (s *Session) Namespace() (error, error) {
 	var warning error
 	// Get the nonce and remove it from the environment.
 	// N.B. We do not save the nonce in the cpu struct.
-	nonce := os.Getenv("CPUNONCE")
+	nonce, ok := os.LookupEnv("CPUNONCE")
+	if !ok {
+		return nil, nil
+	}
 	os.Unsetenv("CPUNONCE")
 	verbose("namespace is %q", s.binds)
 
@@ -44,11 +47,11 @@ func (s *Session) Namespace() (error, error) {
 	return warning, fmt.Errorf("CPUD: cannot use 9p connection yet")
 }
 
-func osMounts() error {
+func osMounts(string) error {
 	return nil
 }
 
 // runSetup performs kernel-specific operations for starting a Session.
-func runSetup() error {
+func runSetup(string) error {
 	return nil
 }
