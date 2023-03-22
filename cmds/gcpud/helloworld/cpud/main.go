@@ -98,7 +98,8 @@ func main() {
 	}
 
 	c := pb.NewGreeterClient(gc)
-		for {
+	if false {
+		for i := 0; i < 5; i++ {
 			log.Printf("send one\n")
 
 			func() {
@@ -109,8 +110,9 @@ func main() {
 					log.Printf("could not greet: %v, %v", r, err)
 				}
 			}()
-			time.Sleep(1*time.Second)
+			time.Sleep(1 * time.Second)
 		}
+	}
 
 	*remote = true
 	if *remote {
@@ -140,17 +142,30 @@ func main() {
 		s.Stdin, s.Stdout = sinout, sinout
 		stderr, sstderr := net.Pipe()
 		s.Stderr = sstderr
+		if false {
+			for i := 0; i < 5; i++ {
+				log.Printf("send one after session.New\n")
+
+				func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+					defer cancel()
+					r, err := c.SayHello(ctx, &pb.HelloRequest{Name: []byte("hiello\n")})
+					if err != nil {
+						log.Printf("could not greet: %v, %v", r, err)
+					}
+				}()
+				time.Sleep(1 * time.Second)
+			}
+		}
 		var wg sync.WaitGroup
 		{
 			wg.Add(3)
 			go func() {
 				defer wg.Done()
 				for {
-					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-					defer cancel()
-					r, err := c.Stdin(ctx, &pb.HelloRequest{})
+					r, err := c.Stdin(context.Background(), &pb.HelloRequest{})
 					if err != nil {
-						log.Printf("could not greet: %v, %v", r, err)
+						log.Printf("Stdin: %v, %v", r, err)
 						return
 					}
 					msg := r.GetMessage()
@@ -167,14 +182,14 @@ func main() {
 					var b [4096]byte
 					n, err := inout.Read(b[:])
 					if err != nil {
-						log.Printf("ou error %v", err)
+						log.Printf("stdout error %v", err)
 						return
 					}
 					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 					defer cancel()
 					r, err := c.SayHello(ctx, &pb.HelloRequest{Name: b[:n]})
 					if err != nil {
-						log.Printf("could not greet: %v, %v", r, err)
+						log.Printf("stdout:could not greet: %v, %v", r, err)
 						return
 					}
 				}
@@ -182,17 +197,15 @@ func main() {
 			go func() {
 				defer wg.Done()
 				for {
-					var b [1]byte
+					var b [4096]byte
 					n, err := stderr.Read(b[:])
 					if err != nil {
-						log.Printf("ou error %v", err)
+						log.Printf("stderr error %v", err)
 						return
 					}
-					ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-					defer cancel()
-					r, err := c.SayHello(ctx, &pb.HelloRequest{Name: b[:n]})
+					r, err := c.SayHello(context.Background(), &pb.HelloRequest{Name: b[:n]})
 					if err != nil {
-						log.Printf("could not greet: %v, %v", r, err)
+						log.Printf("stderr:could not greet: %v, %v", r, err)
 						return
 					}
 				}
