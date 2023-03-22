@@ -28,6 +28,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	pb "github.com/u-root/cpu/cmds/gcpud/helloworld/helloworld"
 	"google.golang.org/grpc"
@@ -61,21 +62,88 @@ func (s *server) Stdin(ctx context.Context, in *pb.HelloRequest) (*pb.HelloReply
 	return r, err
 }
 
+// fake does fake listens. It returns whatever is in the chan.
+// it has to be done this way such that it will block the goroutine
+// doing the listen.
 type fake struct {
-	conn net.Conn
+	conn chan net.Conn
 }
 
 func (f *fake) Accept() (net.Conn, error) {
-	return f.conn, nil
+	log.Printf("ACCEPT:")
+	//fc := NewfakeConn(<-f.conn)
+	fc := <-f.conn
+	log.Printf("gets %v", fc)
+	return fc, nil
 }
 
-func (*fake) Close() error {
+func (f*fake) Close() error {
+	log.Panicf("fakelisterer Close %T %v", f, f)
 	return nil
 }
 
 func (f *fake) Addr() net.Addr {
-	return f.conn.RemoteAddr()
+	log.Printf("ADDR %v", net.TCPAddr{})
+	return &net.TCPAddr{}
 }
+
+// This is annoying, but grpc is painful to debug
+type fakeConn struct {
+	Conn net.Conn
+}
+
+func NewfakeConn(carrier net.Conn) *fakeConn {
+	return &fakeConn{
+		Conn: carrier,
+	}
+}
+
+var tot int
+func (c *fakeConn) Read(b []byte) (n int, err error) {
+	log.Printf("connread")
+	n, err = c.Conn.Read(b)
+	tot += n
+	log.Printf("connread: %d %d so far, %#x(%q), %v", n, tot, b[:n], b[:n], err)
+	return n, err
+}
+
+func (c *fakeConn) Write(b []byte) (n int, err error) {
+	log.Printf("connWrite")
+	return c.Conn.Write(b)
+}
+
+func (c *fakeConn) Close() error {
+	log.Panicf("Close %T %T %v", c, c.Conn, c.Conn)
+	return c.Conn.Close()
+}
+
+func (c *fakeConn) LocalAddr() net.Addr {
+	log.Printf("connLocalddr %v", c.Conn.LocalAddr())
+	return c.Conn.LocalAddr()
+}
+
+func (c *fakeConn) RemoteAddr() net.Addr {
+	log.Printf("connRemoteddr %v", c.Conn.RemoteAddr())
+	return c.Conn.RemoteAddr()
+}
+
+func (c *fakeConn) SetDeadline(t time.Time) error {
+	log.Printf("connsetdeadline %v", t)
+	return c.Conn.SetDeadline(t)
+}
+
+func (c *fakeConn) SetReadDeadline(t time.Time) error {
+	log.Printf("connsetReaddeadline %v", t)
+	return c.Conn.SetReadDeadline(t)
+}
+
+func (c *fakeConn) SetWriteDeadline(t time.Time) error {
+	log.Printf("connsetWritedeadline %v", t)
+	return c.Conn.SetWriteDeadline(t)
+}
+
+// Static checking for type
+var _ net.Conn = &fakeConn{}
 
 func main() {
 	flag.Parse()
@@ -87,8 +155,9 @@ func main() {
 	}
 	s := grpc.NewServer()
 	pb.RegisterGreeterServer(s, &server{r: os.Stdin})
-	lis := &fake{conn: conn}
-	log.Printf("server listening at %v", lis.Addr())
+	fchan := make(chan net.Conn, 1)
+	fchan <- conn
+	lis := &fake{conn: fchan}
 	if err := s.Serve(lis); err != nil {
 		log.Fatalf("failed to serve: %v", err)
 	}

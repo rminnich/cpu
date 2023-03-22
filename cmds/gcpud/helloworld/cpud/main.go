@@ -98,6 +98,19 @@ func main() {
 	}
 
 	c := pb.NewGreeterClient(gc)
+		for {
+			log.Printf("send one\n")
+
+			func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+				defer cancel()
+				r, err := c.SayHello(ctx, &pb.HelloRequest{Name: []byte("hiello\n")})
+				if err != nil {
+					log.Printf("could not greet: %v, %v", r, err)
+				}
+			}()
+			time.Sleep(1*time.Second)
+		}
 
 	*remote = true
 	if *remote {

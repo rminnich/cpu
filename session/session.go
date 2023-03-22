@@ -218,7 +218,7 @@ func (s *Session) Run() error {
 	c.Stdin, c.Stdout, c.Stderr, c.Dir = s.Stdin, s.Stdout, s.Stderr, os.Getenv("PWD")
 	dirInfo, err := os.Stat(c.Dir)
 	if err != nil || !dirInfo.IsDir() {
-		log.Printf("CPUD: your $PWD %s is not in the remote namespace", c.Dir)
+		log.Printf("CPUD: your $PWD %q is not in the remote namespace", c.Dir)
 		return os.ErrNotExist
 	}
 	err = runCmd(c)
