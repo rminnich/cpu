@@ -8,7 +8,7 @@ require (
 	github.com/kevinburke/ssh_config v1.1.0
 	github.com/u-root/u-root v0.9.0
 	golang.org/x/crypto v0.0.0-20220525230936-793ad666bf5e
-	golang.org/x/sys v0.0.0-20220722155257-8c9f86f7a55f
+	golang.org/x/sys v0.6.0
 )
 
 require (
@@ -18,11 +18,9 @@ require (
 	github.com/jacobsa/fuse v0.0.0-20221016084658-a4cd154343d8
 	github.com/jacobsa/syncutil v0.0.0-20180201203307-228ac8e5a6c3
 	github.com/mdlayher/vsock v1.1.1
-	github.com/pramonow/go-grpc-server-streaming-example v0.0.0-20221124093400-1cdc9a9cd5f7
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	golang.org/x/exp v0.0.0-20221002003631-540bb7301a08
 	google.golang.org/grpc v1.53.0
-	google.golang.org/grpc/examples v0.0.0-20230321232853-a02aae6168aa
 	google.golang.org/protobuf v1.30.0
 )
 
@@ -50,4 +48,3 @@ require (
 	golang.org/x/tools v0.6.0 // indirect
 	google.golang.org/genproto v0.0.0-20230320184635-7606e756e683 // indirect
 )
-
