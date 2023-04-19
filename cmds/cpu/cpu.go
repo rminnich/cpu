@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -52,6 +53,9 @@ var (
 	// Do not call it directly, call verbose instead.
 	v          = func(string, ...interface{}) {}
 	dumpWriter *os.File
+
+	// This is an unsafe thing to do. People want it.
+	letsNotEncrypt = flag.Bool("letsnotencrypt", false, "lets not encrypt sessions")
 )
 
 func verbose(f string, a ...interface{}) {
@@ -156,9 +160,26 @@ func newCPU(host string, args ...string) (retErr error) {
 		client.WithTimeout(*timeout9P)); err != nil {
 		log.Fatal(err)
 	}
+
+	var l net.Listener
+	var err error
+	if *letsNotEncrypt {
+		l, err = net.Listen("tcp", net.JoinHostPort(host, ""))
+		if err != nil {
+			return err
+		}
+		c.Env = append(c.Env, "CPU_LETSNOTENCRYPT="+l.Addr().String())
+		verbose("unsafely listening on %v", l.Addr())
+	}
+
 	if err := c.Dial(); err != nil {
 		return fmt.Errorf("Dial: %v", err)
 	}
+
+	go func() {
+		c, err := l.Accept()
+		log.Printf("Accepted %v %v", c, err)
+	}()
 
 	sigChan := make(chan os.Signal, 1)
 	defer close(sigChan)
@@ -177,7 +198,6 @@ func newCPU(host string, args ...string) (retErr error) {
 		errChan <- c.Wait()
 	}()
 
-	var err error
 loop:
 	for {
 		select {
