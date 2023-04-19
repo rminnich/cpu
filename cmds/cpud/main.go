@@ -36,6 +36,9 @@ var (
 	registerAddr = flag.String("register", "", "address and port to register with after listen on cpu server port")
 	registerTO   = flag.Duration("registerTO", time.Duration(5*time.Second), "time.Duration for Dial address for registering")
 
+	// This is an unsafe thing to do. People want it.
+	letsNotEncrypt = flag.Bool("letsnotencrypt", false, "lets not encrypt sessions")
+
 	pid1 bool
 )
 
