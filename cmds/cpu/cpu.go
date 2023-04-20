@@ -176,10 +176,12 @@ func newCPU(host string, args ...string) (retErr error) {
 		return fmt.Errorf("Dial: %v", err)
 	}
 
-	go func() {
-		c, err := l.Accept()
-		log.Printf("Accepted %v %v", c, err)
-	}()
+	if *letsNotEncrypt {
+		go func() {
+			c, err := l.Accept()
+			log.Printf("Accepted %v %v", c, err)
+		}()
+	}
 
 	sigChan := make(chan os.Signal, 1)
 	defer close(sigChan)

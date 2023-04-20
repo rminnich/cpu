@@ -7,6 +7,7 @@ package main
 import (
 	"flag"
 	"log"
+	"net"
 	"os"
 	"time"
 
@@ -22,7 +23,7 @@ var (
 	pubKeyFile  = flag.String("pk", "key.pub", "file for public key")
 	port        = flag.String("sp", "17010", "cpu default port")
 
-	debug     = flag.Bool("d", false, "enable debug prints")
+	debug     = flag.Bool("d", true, "enable debug prints")
 	runAsInit = flag.Bool("init", false, "run as init (Debug only; normal test is if we are pid 1")
 	// v allows debug printing.
 	// Do not call it directly, call verbose instead.
@@ -72,6 +73,16 @@ func main() {
 		if !ok || len(tmpMnt) == 0 {
 			tmpMnt = "/tmp"
 		}
+		addr, ok := os.LookupEnv("CPU_LETSNOTENCRYPT")
+		if ok {
+			verbose("connLetsNotEncrypt: dial %v", addr)
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				verbose("Dial %v for LetsNotEncrypt:%v", addr, err)
+			}
+			log.Printf(".... %v %v", conn, err)
+		}
+
 		s := session.New(*port9p, tmpMnt, args[0], args[1:]...)
 		if err := s.Run(); err != nil {
 			log.Fatalf("CPUD(remote): %v", err)
