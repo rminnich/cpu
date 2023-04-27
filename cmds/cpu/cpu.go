@@ -170,16 +170,16 @@ func newCPU(host string, args ...string) (retErr error) {
 		}
 		c.Env = append(c.Env, "CPU_LETSNOTENCRYPT="+l.Addr().String())
 		verbose("unsafely listening on %v", l.Addr())
+		go func() {
+			c, err := l.Accept()
+			log.Printf("Accepted %v %v", c, err)
+		}()
+
 	}
 
 	if err := c.Dial(); err != nil {
 		return fmt.Errorf("Dial: %v", err)
 	}
-
-	go func() {
-		c, err := l.Accept()
-		log.Printf("Accepted %v %v", c, err)
-	}()
 
 	sigChan := make(chan os.Signal, 1)
 	defer close(sigChan)
