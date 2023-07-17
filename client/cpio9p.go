@@ -15,8 +15,8 @@
 package client
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"syscall"
 
@@ -30,7 +30,7 @@ import (
 // The reason is that we can (we think) get all we need
 // from the walks.
 type cpioQID struct {
-		p9.DefaultWalkGetAttr
+	p9.DefaultWalkGetAttr
 	path uint64
 	name string
 }
@@ -39,9 +39,10 @@ type cpioQID struct {
 type CPIO9P struct {
 	p9.DefaultWalkGetAttr
 
-	file    *os.File
-	rr      cpio.RecordReader
-	recs    []cpio.Record
+	file *os.File
+	rr   cpio.RecordReader
+	m    map[string]uint64
+	recs []cpio.Record
 }
 
 // CPIO9PFile defines a FID.
@@ -49,7 +50,7 @@ type CPIO9P struct {
 // for every FID. Luckily they go away when clunked.
 type CPIO9PFID struct {
 	p9.DefaultWalkGetAttr
-	
+
 	fs   *CPIO9P
 	path uint64
 }
@@ -76,13 +77,18 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 		return nil, err
 	}
 
-	return &CPIO9P{file: f,  rr: rr, recs: recs}, nil
+	m := map[string]uint64{}
+	for i, r := range recs {
+		m[r.Info.Name] = uint64(i)
+	}
+
+	return &CPIO9P{file: f, rr: rr, recs: recs, m: m}, nil
 }
 
 // Attach implements p9.Attacher.Attach.
 // Only works for root.
 func (s *CPIO9P) Attach() (p9.File, error) {
-	return &CPIO9PFID{fs: s, path:0}, nil
+	return &CPIO9PFID{fs: s, path: 0}, nil
 	// we need to accumulate the full path here
 	// for now this will only work for root.
 	for i, n := range s.recs {
@@ -106,39 +112,38 @@ func (l *CPIO9PFID) rec() (*cpio.Record, error) {
 }
 
 // info constructs a QID for this file.
-func (l *CPIO9PFID) info() (p9.QID, os.FileInfo, error) {
-	var 		qid p9.QID
-
+func (l *CPIO9PFID) info() (p9.QID, *cpio.Info, error) {
+	var qid p9.QID
 
 	r, err := l.rec()
 	if err != nil {
 		return qid, nil, err
 	}
-	
+
 	fi := r.Info
 	// Construct the QID type.
 	//qid.Type = p9.ModeFromOS(fi.Mode).QIDType()
 
 	// Save the path from the Ino.
 	qid.Path = l.path
-	return qid, fi, nil
+	return qid, &fi, nil
 }
 
 // Walk implements p9.File.Walk.
 func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
-	_, err := l.rec()
+	r, err := l.rec()
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var qids []p9.QID
-	last := &CPIO9PFID{path: l.path}
+	last := &CPIO9PFID{path: l.path, fs: l.fs}
 	// If the names are empty we return info for l
 	// An extra stat is never hurtful; all servers
 	// are a bundle of race conditions and there's no need
 	// to make things worse.
 	if len(names) == 0 {
-		c := &CPIO9PFID{path: last.path}
+		c := &CPIO9PFID{path: last.path, fs: l.fs}
 		qid, fi, err := c.info()
 		verbose("Walk to %v: %v, %v, %v", *c, qid, fi, err)
 		if err != nil {
@@ -149,12 +154,18 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 		return qids, last, nil
 	}
 	verbose("Walk: %v", names)
+	fullpath := r.Info.Name
 	for _, name := range names {
-		c := &CPIO9PFID{path: last.path}
+		c := &CPIO9PFID{path: last.path, fs: l.fs}
 		qid, fi, err := c.info()
-		verbose("Walk to %v: %v, %v, %v", *c, qid, fi, err)
 		if err != nil {
 			return nil, nil, err
+		}
+		fullpath = filepath.Join(fullpath, name)
+		r, ok := l.fs.m[fullpath]
+		verbose("Walk to %v: %v, %v, %v", r, qid, fi, ok)
+		if !ok {
+			return nil, nil, os.ErrNotExist
 		}
 		qids = append(qids, qid)
 		last = c
@@ -199,7 +210,7 @@ func (l *CPIO9PFID) ReadAt(p []byte, offset int64) (int, error) {
 		return -1, err
 	}
 
-	return l.fs.file.ReadAt(p, int64(r.FileOffset)+offset)
+	return l.fs.file.ReadAt(p, int64(r.FilePos)+offset)
 }
 
 // Write implements p9.File.WriteAt.
@@ -236,19 +247,19 @@ func (l *CPIO9PFID) Link(target p9.File, newname string) error {
 func (l *CPIO9PFID) readdir() ([]uint64, error) {
 	r, err := l.rec()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	dn := l.fs.recs[l.path.Info.Name]
+	dn := r.Info.Name
 	// while the name is a prefix of the records we are scanning,
 	// append the record.
 	// This can not be returned as a range as we do not want
 	// contents of all subdirs.
 	var list []uint64
-	for _, n := range l.fs.recs[l.path+1:] {
-		if !strings.Prefix(d.n, n.fs.recs[n.path.Info.Name]) {
+	for i, r := range l.fs.recs[l.path+1:] {
+		if !strings.HasPrefix(r.Info.Name, dn) {
 			continue
 		}
-		list = append(list, n.path)
+		list = append(list, uint64(i))
 	}
 	return list, nil
 
@@ -333,4 +344,49 @@ func (l *CPIO9PFID) RenameAt(oldName string, newDir p9.File, newName string) err
 func (*CPIO9PFID) StatFS() (p9.FSStat, error) {
 	verbose("StatFS: not implemented")
 	return p9.FSStat{}, syscall.ENOSYS
+}
+
+func (l *CPIO9PFID) SetAttr(mask p9.SetAttrMask, attr p9.SetAttr) error {
+	return os.ErrPermission
+}
+
+// GetAttr implements p9.File.GetAttr.
+//
+// Not fully implemented.
+func (l *CPIO9PFID) GetAttr(req p9.AttrMask) (p9.QID, p9.AttrMask, p9.Attr, error) {
+	qid, fi, err := l.info()
+	if err != nil {
+		return qid, p9.AttrMask{}, p9.Attr{}, err
+	}
+
+	attr := p9.Attr{
+		Mode:             p9.FileMode(fi.Mode),
+		UID:              p9.UID(fi.UID),
+		GID:              p9.GID(fi.GID),
+		NLink:            p9.NLink(fi.NLink),
+		RDev:             p9.Dev(fi.Dev),
+		Size:             uint64(fi.FileSize),
+		BlockSize:        uint64(4096),
+		Blocks:           uint64(fi.FileSize / 4096),
+		ATimeSeconds:     uint64(0),
+		ATimeNanoSeconds: uint64(0),
+		MTimeSeconds:     uint64(fi.MTime),
+		MTimeNanoSeconds: uint64(0),
+		CTimeSeconds:     0,
+		CTimeNanoSeconds: 0,
+	}
+	valid := p9.AttrMask{
+		Mode:   true,
+		UID:    true,
+		GID:    true,
+		NLink:  true,
+		RDev:   true,
+		Size:   true,
+		Blocks: true,
+		ATime:  true,
+		MTime:  true,
+		CTime:  true,
+	}
+
+	return qid, valid, attr, nil
 }
