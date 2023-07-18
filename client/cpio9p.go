@@ -25,17 +25,6 @@ import (
 	"github.com/u-root/u-root/pkg/cpio"
 )
 
-// Each file in this server has a name and a path. The path
-// is the index in records array.
-// Not clear we need this now, do don't use it.
-// The reason is that we can (we think) get all we need
-// from the walks.
-type cpioQID struct {
-	p9.DefaultWalkGetAttr
-	path uint64
-	name string
-}
-
 // CPIO9P is a p9.Attacher.
 type CPIO9P struct {
 	p9.DefaultWalkGetAttr
@@ -77,7 +66,7 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 	if len(recs) == 0 {
 		return nil, fmt.Errorf("No records: %w", os.ErrInvalid)
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -113,6 +102,7 @@ func (l *CPIO9PFID) rec() (*cpio.Record, error) {
 	if int(l.path) > len(l.fs.recs) {
 		return nil, os.ErrNotExist
 	}
+	v("rec for %v is %v", l, l.fs.recs[l.path])
 	return &l.fs.recs[l.path], nil
 }
 
@@ -168,13 +158,13 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 			return nil, nil, err
 		}
 		fullpath = filepath.Join(fullpath, name)
-		r, ok := l.fs.m[fullpath]
+		ix, ok := l.fs.m[fullpath]
 		verbose("Walk to %q from %v: %v, %v, %v", fullpath, r, qid, fi, ok)
 		if !ok {
 			return nil, nil, os.ErrNotExist
 		}
 		qids = append(qids, qid)
-		last = c
+		last.path = ix
 	}
 	verbose("Walk: return %v, %v, nil", qids, last)
 	return qids, last, nil
@@ -215,8 +205,7 @@ func (l *CPIO9PFID) ReadAt(p []byte, offset int64) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-
-	return l.fs.file.ReadAt(p, int64(r.FilePos)+offset)
+	return r.ReadAt(p, offset)
 }
 
 // Write implements p9.File.WriteAt.
