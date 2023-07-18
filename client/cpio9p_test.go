@@ -82,4 +82,22 @@ func TestCPIO9P(t *testing.T) {
 	if string(data[:]) != "i\n" {
 		t.Fatalf("Reading hi: want %q, got %q", "i\n", string(data[:]))
 	}
+
+	dirs, err := c.Readdir(0, 64*1024)
+	if err != nil {
+		t.Fatalf("readdir on root: want nil, got %v", err)
+	}
+	if len(dirs) != 3 {
+		t.Fatalf("readdir on root: want %d entries, got %d", 3, len(dirs))
+	}
+	t.Logf("readdir c/ %v", dirs)
+
+	dirs, err = root.Readdir(0, 64*1024)
+	if err != nil {
+		t.Fatalf("readdir on root: want nil, got %v", err)
+	}
+	if len(dirs) != 1 {
+		t.Fatalf("readdir on root: want %d entries, got %d", 1, len(dirs))
+	}
+	t.Logf("readdir / %v", dirs)
 }

@@ -245,19 +245,20 @@ func (l *CPIO9PFID) readdir() ([]uint64, error) {
 		return nil, err
 	}
 	dn := r.Info.Name
+	verbose("readdir starts from %v %v", l, r)
 	// while the name is a prefix of the records we are scanning,
 	// append the record.
 	// This can not be returned as a range as we do not want
 	// contents of all subdirs.
 	var list []uint64
-	for i, r := range l.fs.recs[l.path+1:] {
+	for i, r := range l.fs.recs[l.path:] {
 		if !strings.HasPrefix(r.Info.Name, dn) {
-			continue
+			break
 		}
+		verbose("readdir: %v", i)
 		list = append(list, uint64(i))
 	}
 	return list, nil
-
 }
 
 // Readdir implements p9.File.Readdir.
