@@ -15,6 +15,7 @@
 package client
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -73,6 +74,10 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 	}
 
 	recs, err := cpio.ReadAllRecords(rr)
+	if len(recs) == 0 {
+		return nil, fmt.Errorf("No records: %w", os.ErrInvalid)
+	}
+	
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +140,7 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-
+	verbose("starting record for %v is %v", l, r)
 	var qids []p9.QID
 	last := &CPIO9PFID{path: l.path, fs: l.fs}
 	// If the names are empty we return info for l
@@ -155,6 +160,7 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 	}
 	verbose("Walk: %v", names)
 	fullpath := r.Info.Name
+	verbose("Walk from %q: %q", fullpath, names)
 	for _, name := range names {
 		c := &CPIO9PFID{path: last.path, fs: l.fs}
 		qid, fi, err := c.info()
@@ -163,7 +169,7 @@ func (l *CPIO9PFID) Walk(names []string) ([]p9.QID, p9.File, error) {
 		}
 		fullpath = filepath.Join(fullpath, name)
 		r, ok := l.fs.m[fullpath]
-		verbose("Walk to %v: %v, %v, %v", r, qid, fi, ok)
+		verbose("Walk to %q from %v: %v, %v, %v", fullpath, r, qid, fi, ok)
 		if !ok {
 			return nil, nil, os.ErrNotExist
 		}
