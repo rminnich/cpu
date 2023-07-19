@@ -87,8 +87,8 @@ func TestCPIO9P(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readdir on root: want nil, got %v", err)
 	}
-	if len(dirs) != 3 {
-		t.Fatalf("readdir on root: want %d entries, got %d", 3, len(dirs))
+	if len(dirs) != 4 {
+		t.Fatalf("readdir on root: want %d entries, got %d", 4, len(dirs))
 	}
 	t.Logf("readdir c/ %v", dirs)
 
@@ -96,8 +96,8 @@ func TestCPIO9P(t *testing.T) {
 	if err != nil {
 		t.Fatalf("readdir on root: want nil, got %v", err)
 	}
-	if len(dirs) != 1 {
-		t.Fatalf("readdir on root: want %d entries, got %d", 1, len(dirs))
+	if len(dirs) != 2 {
+		t.Fatalf("readdir on root: want %d entries, got %d", 2, len(dirs))
 	}
 	t.Logf("readdir / %v", dirs)
 }

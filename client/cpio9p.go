@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 
 	"github.com/hugelgupf/p9/p9"
@@ -71,10 +70,13 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 		return nil, err
 	}
 
+	verbose("records %v", recs)
 	m := map[string]uint64{}
 	for i, r := range recs {
+		verbose("add %q @ %d", r.Info.Name, i)
 		m[r.Info.Name] = uint64(i)
 	}
+	verbose("map %v", m)
 
 	return &CPIO9P{file: f, rr: rr, recs: recs, m: m}, nil
 }
@@ -240,6 +242,7 @@ func (l *CPIO9PFID) Link(target p9.File, newname string) error {
 }
 
 func (l *CPIO9PFID) readdir() ([]uint64, error) {
+	verbose("readdir at %d", l.path)
 	r, err := l.rec()
 	if err != nil {
 		return nil, err
@@ -251,12 +254,23 @@ func (l *CPIO9PFID) readdir() ([]uint64, error) {
 	// This can not be returned as a range as we do not want
 	// contents of all subdirs.
 	var list []uint64
-	for i, r := range l.fs.recs[l.path:] {
-		if !strings.HasPrefix(r.Info.Name, dn) {
+	for i, r := range l.fs.recs[l.path+1:] {
+		// filepath.Rel fails, we're done here.
+		b, err := filepath.Rel(dn, r.Name)
+		if err != nil {
+			verbose("r.Name %q: DONE", r.Name)
 			break
 		}
+		verbose("B ---> %q", b)
+		dir, f := filepath.Split(b)
+		verbose("dir %q f %q", dir, f)
+		if len(dir) > 0 {
+			verbose("r.Name %q: DUP", r.Name)
+			
+			continue
+		}
 		verbose("readdir: %v", i)
-		list = append(list, uint64(i))
+		list = append(list, uint64(i)+l.path+1)
 	}
 	return list, nil
 }
@@ -265,11 +279,23 @@ func (l *CPIO9PFID) readdir() ([]uint64, error) {
 // This is a bit of a mess in cpio, but the good news is that
 // files will be in some sort of order ...
 func (l *CPIO9PFID) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
+	qid, _, err := l.info()
+	if err != nil {
+		return nil, err
+	}
 	list, err := l.readdir()
 	if err != nil {
 		return nil, err
 	}
+	verbose("readdir list %v", list)
 	var dirents p9.Dirents
+		dirents = append(dirents, p9.Dirent{
+			QID:    qid,
+			Type:   qid.Type,
+			Name:   ".",
+			Offset: l.path,
+		})
+	verbose("add path %d '.'", l.path)
 	//log.Printf("readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
 	for _, i := range list {
 		entry := CPIO9PFID{path: i, fs: l.fs}
@@ -277,10 +303,11 @@ func (l *CPIO9PFID) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 		if err != nil {
 			continue
 		}
-		r, err := l.rec()
+		r, err := entry.rec()
 		if err != nil {
 			continue
 		}
+		verbose("add path %d %q", i, r.Info.Name)
 		dirents = append(dirents, p9.Dirent{
 			QID:    qid,
 			Type:   qid.Type,
