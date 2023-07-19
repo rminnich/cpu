@@ -82,14 +82,6 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 // Only works for root.
 func (s *CPIO9P) Attach() (p9.File, error) {
 	return &CPIO9PFID{fs: s, path: 0}, nil
-	// we need to accumulate the full path here
-	// for now this will only work for root.
-	for i, n := range s.recs {
-		if "/" /*name*/ == n.Info.Name {
-			return &CPIO9PFID{fs: s, path: uint64(i)}, nil
-		}
-	}
-	return nil, os.ErrNotExist
 }
 
 var (
