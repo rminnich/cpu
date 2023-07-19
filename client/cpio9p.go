@@ -282,12 +282,12 @@ func (l *CPIO9PFID) Readdir(offset uint64, count uint32) (p9.Dirents, error) {
 	}
 	verbose("readdir list %v", list)
 	var dirents p9.Dirents
-		dirents = append(dirents, p9.Dirent{
-			QID:    qid,
-			Type:   qid.Type,
-			Name:   ".",
-			Offset: l.path,
-		})
+	dirents = append(dirents, p9.Dirent{
+		QID:    qid,
+		Type:   qid.Type,
+		Name:   ".",
+		Offset: l.path,
+	})
 	verbose("add path %d '.'", l.path)
 	//log.Printf("readdir %q returns %d entries start at offset %d", l.path, len(fi), offset)
 	for _, i := range list {
@@ -324,11 +324,6 @@ func (l *CPIO9PFID) Flush() error {
 
 // Renamed implements p9.File.Renamed.
 func (l *CPIO9PFID) Renamed(parent p9.File, newName string) {
-}
-
-// Remove implements p9.File.Remove
-func (l *CPIO9PFID) Remove() error {
-	return os.ErrPermission
 }
 
 // UnlinkAt implements p9.File.UnlinkAt.
