@@ -70,13 +70,10 @@ func NewCPIO9P(c string) (*CPIO9P, error) {
 		return nil, err
 	}
 
-	verbose("records %v", recs)
 	m := map[string]uint64{}
 	for i, r := range recs {
-		verbose("add %q @ %d", r.Info.Name, i)
 		m[r.Info.Name] = uint64(i)
 	}
-	verbose("map %v", m)
 
 	return &CPIO9P{file: f, rr: rr, recs: recs, m: m}, nil
 }
@@ -261,12 +258,8 @@ func (l *CPIO9PFID) readdir() ([]uint64, error) {
 			verbose("r.Name %q: DONE", r.Name)
 			break
 		}
-		verbose("B ---> %q", b)
-		dir, f := filepath.Split(b)
-		verbose("dir %q f %q", dir, f)
+		dir, _ := filepath.Split(b)
 		if len(dir) > 0 {
-			verbose("r.Name %q: DUP", r.Name)
-			
 			continue
 		}
 		verbose("readdir: %v", i)
@@ -345,13 +338,11 @@ func (l *CPIO9PFID) UnlinkAt(name string, flags uint32) error {
 
 // Mknod implements p9.File.Mknod.
 func (*CPIO9PFID) Mknod(name string, mode p9.FileMode, major uint32, minor uint32, _ p9.UID, _ p9.GID) (p9.QID, error) {
-	verbose("Mknod: not implemented")
 	return p9.QID{}, syscall.ENOSYS
 }
 
 // Rename implements p9.File.Rename.
 func (*CPIO9PFID) Rename(directory p9.File, name string) error {
-	verbose("Rename: not implemented")
 	return syscall.ENOSYS
 }
 
@@ -365,7 +356,6 @@ func (l *CPIO9PFID) RenameAt(oldName string, newDir p9.File, newName string) err
 //
 // Not implemented.
 func (*CPIO9PFID) StatFS() (p9.FSStat, error) {
-	verbose("StatFS: not implemented")
 	return p9.FSStat{}, syscall.ENOSYS
 }
 
