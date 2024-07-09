@@ -17,6 +17,7 @@ require (
 	github.com/go-git/go-billy/v5 v5.5.1-0.20240514075308-8f1b719cb6a2
 	github.com/google/uuid v1.5.0
 	github.com/mdlayher/vsock v1.2.1
+	github.com/moby/sys/mountinfo v0.7.1
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/willscott/go-nfs v0.0.2
 	golang.org/x/exp v0.0.0-20230810033253-352e893a4cad
@@ -35,7 +36,6 @@ require (
 	github.com/miekg/dns v1.1.55 // indirect
 	github.com/pierrec/lz4/v4 v4.1.18 // indirect
 	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
-	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/u-root/uio v0.0.0-20230305220412-3e8cd9d6bf63 // indirect
