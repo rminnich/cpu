@@ -53,6 +53,9 @@ var (
 	ssh  = flag.Bool("ssh", false, "ssh only, no internal 9p, nfs, or mounts")
 	sshd = flag.Bool("sshd", false, "server is sshd, not cpud")
 
+	// too many f'ing switches. This is starting to look like cat -v
+	serveros = flag.String("serveros", "linux", "serveros (use a valid runtime.GOOS name)")
+
 	// v allows debug printing.
 	// Do not call it directly, call verbose instead.
 	v          = func(string, ...interface{}) {}
@@ -178,6 +181,7 @@ func newCPU(host string, args ...string) (retErr error) {
 		client.With9P(*ninep),
 		client.WithFSTab(*fstab),
 		client.WithNetwork(*network),
+		client.WithServerGOOS(*serveros),
 		client.WithTimeout(*timeout9P)); err != nil {
 		log.Fatal(err)
 	}
