@@ -6,6 +6,7 @@ package client
 
 import (
 	"errors"
+	"os"
 	"strconv"
 	"testing"
 )
@@ -52,4 +53,40 @@ func TestCmdWithDisablePrivateKey(t *testing.T) {
 	if !c.DisablePrivateKey {
 		t.Fatal("WithDisablePrivateKey(true) should set DisablePrivateKey to true, got false")
 	}
+}
+
+func TestServerOS(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+	}{
+		// Known to work
+		{name: "linux", err: nil},
+		// in progress
+		{name: "freebsd", err: nil},
+
+		// Need testing
+		{name: "aix", err: os.ErrInvalid},
+		{name: "android", err: os.ErrInvalid},
+		{name: "darwin", err: os.ErrInvalid},
+		{name: "dragonfly", err: os.ErrInvalid},
+		{name: "illumos", err: os.ErrInvalid},
+		{name: "ios", err: os.ErrInvalid},
+		{name: "js", err: os.ErrInvalid},
+		{name: "netbsd", err: os.ErrInvalid},
+		{name: "openbsd", err: os.ErrInvalid},
+		{name: "plan9", err: os.ErrInvalid},
+		{name: "solaris", err: os.ErrInvalid},
+		{name: "wasip1", err: os.ErrInvalid},
+		{name: "windows", err: os.ErrInvalid},
+		// NEVER!
+		{name: "winblows", err: os.ErrInvalid},
+	} {
+		f := WithServerGOOS(tt.name)
+		c := &Cmd{}
+		if err := f(c); !errors.Is(err, tt.err) {
+			t.Errorf("%s: got %v, want %v", tt.name, err, tt.err)
+		}
+	}
+
 }

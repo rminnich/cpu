@@ -79,6 +79,7 @@ type Cmd struct {
 	cmd        string // The command is built up, bit by bit, as we configure the client
 	closers    []func() error
 	fileServer p9.Attacher
+	os         string // GOOS on the server side
 }
 
 // SetOptions sets various options into the Command.
@@ -149,6 +150,37 @@ func Command(host string, args ...string) *Cmd {
 
 // Set is the type of function used to set options in SetOptions.
 type Set func(*Cmd) error
+
+// WithServerGOOS sets the OS used on the server.
+// This affects, among other things, mount options.
+func WithServerGOOS(s string) Set {
+	return func(c *Cmd) error {
+		// Not all GOOS options make sense,
+		// but who are we to judge?
+		switch s {
+		case
+			"linux",
+			"freebsd":
+			c.os = s
+			return nil
+		case
+			"aix",
+			"android",
+			"darwin",
+			"dragonfly",
+			"illumos",
+			"ios",
+			"js",
+			"netbsd",
+			"openbsd",
+			"plan9",
+			"solaris",
+			"wasip1",
+			"windows":
+		}
+		return fmt.Errorf("%q is not an acceptable GOOS; try go tool dist list for choices:%w", s, os.ErrInvalid)
+	}
+}
 
 // WithServer allows setting custom 9P servers.
 // One use: should users wish to serve from a flattened
