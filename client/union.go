@@ -755,7 +755,16 @@ func SrvNFS(cl *Cmd, n string, dir string) (func() error, string, error) {
 	f := func() error {
 		return nfs.Serve(l, cacheHelper)
 	}
+
+	// This is *the* command case, so we might as well start that way.
 	fstab := fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs rw,relatime,vers=3,rsize=1048576,wsize=1048576,namlen=255,hard,nolock,proto=tcp,port=%d,timeo=600,retrans=2,sec=sys,mountaddr=127.0.0.1,mountvers=3,mountport=%d,mountproto=tcp,local_lock=all,addr=127.0.0.1 0 0\n", u, portnfs, portnfs)
+	switch cl.os {
+	case "", "linux":
+	case "freebsd":
+		fstab = fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs rw,tcp,nfsvers=3,port=%d,mountport=%d 0 0\n", u, portnfs, portnfs)
+	default:
+		return nil, "", fmt.Errorf("mount on %q is not supported:%w", cl.os, os.ErrInvalid)
+	}
 	return f, fstab, nil
 }
 
