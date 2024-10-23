@@ -352,6 +352,7 @@ func (c *Cmd) Dial() error {
 	if err != nil {
 		return err
 	}
+	verbose("%q", string(sshconn.ServerVersion()))
 	cl := ssh.NewClient(sshconn, chans, reqs)
 	verbose("cpu:ssh.Dial(%s, %s, %v): (%v, %v)", c.network, addr, c.config, cl, err)
 	if err != nil {
