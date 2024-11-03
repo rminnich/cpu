@@ -761,7 +761,7 @@ func SrvNFS(cl *Cmd, n string, dir string) (func() error, string, error) {
 	switch cl.os {
 	case "", "linux":
 	case "freebsd":
-		fstab = fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs rw,tcp,nfsvers=3,port=%d,mountport=%d 0 0\n", u, portnfs, portnfs)
+		fstab = fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs nolockd,rw,tcp,nfsvers=3,mountport=%d,port=%d 0 0\n", u,  portnfs, portnfs)
 	default:
 		return nil, "", fmt.Errorf("mount on %q is not supported:%w", cl.os, os.ErrInvalid)
 	}
@@ -788,11 +788,13 @@ func (h *NullAuthHandler) Mount(ctx context.Context, conn net.Conn, req nfs.Moun
 	// To keep things slightly safer, only one mount is allowed.
 	// Even if it fails, there is no retry; you only get one chance.
 	c := atomic.AddInt32(&h.count, 1)
+	verbose("Mount call. Count is %d", c)
 	if c > 1 {
 		status = nfs.MountStatusErrPerm
 		return
 	}
 	if string(req.Dirpath) != h.n {
+		verbose("req.Dirpath %q != h.n", string(req.Dirpath), h.n)
 		status = nfs.MountStatusErrNoEnt
 		verbose("req.Dirpath %q != nonce %q", string(req.Dirpath), h.n)
 		return
@@ -801,6 +803,7 @@ func (h *NullAuthHandler) Mount(ctx context.Context, conn net.Conn, req nfs.Moun
 	status = nfs.MountStatusOk
 	hndl = h.fs
 	auths = []nfs.AuthFlavor{nfs.AuthFlavorNull}
+	verbose("All is accepted")
 	return
 }
 
