@@ -761,7 +761,7 @@ func SrvNFS(cl *Cmd, n string, dir string) (func() error, string, error) {
 	switch cl.os {
 	case "", "linux":
 	case "freebsd":
-		fstab = fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs nolockd,rw,tcp,nfsvers=3,mountport=%d,port=%d 0 0\n", u,  portnfs, portnfs)
+		fstab = fmt.Sprintf("127.0.0.1:%s /tmp/cpu nfs nolockd,rw,tcp,vers=3,mountport=%d,port=%d 0 0\n", u,  portnfs, portnfs)
 	default:
 		return nil, "", fmt.Errorf("mount on %q is not supported:%w", cl.os, os.ErrInvalid)
 	}
