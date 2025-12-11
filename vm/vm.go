@@ -120,7 +120,7 @@ func Uroot(d, GOOS, GOARCH string, opts ...string) (string, error) {
 	c := exec.Command("u-root", "-o", out)
 	c.Env = append(append(os.Environ(), "CGO_ENABLED=0", "GOARCH="+GOARCH, "GOOS="+GOOS), opts...)
 	if out, err := c.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("u-root initramfs:%q:%w", out, err)
+		return "", fmt.Errorf("u-root initramfs failed: you may need a go.work to point to u-root source, e.g. go work init\ngo work use path/to/u-root\n:%s:%w", out, err)
 	}
 	return out, nil
 
