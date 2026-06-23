@@ -52,9 +52,11 @@ func TestCPUAMD64(t *testing.T) {
 		args []string
 		ok   bool
 	}{
+		{cmd: "/bbin/ls", args: []string{"/tmp/cpu"}, ok: true},
 		{cmd: "/bbin/dd", args: []string{"if=/dev/x"}, ok: false},
 		{cmd: "/bbin/dd", args: []string{"if=/dev/null"}, ok: true},
 		{cmd: "/bbin/dd", args: []string{"if=/tmp/cpu/a", "of=/tmp/cpu/b"}, ok: true},
+		{cmd: "/tmp/cpu/vm.test", args: []string{"-test.v", "-test.run=TestInVM"}, ok: true},
 	} {
 		cpu, err := i.CPUCommand(tt.cmd, tt.args...)
 		if err != nil {
@@ -166,4 +168,8 @@ func TestCPUARM(t *testing.T) {
 		t.Fatalf("file b: got %q, want %q", b, "hi")
 	}
 
+}
+
+func TestInVMOK(t *testing.T) {
+	t.Logf("i am ok with this")
 }
